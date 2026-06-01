@@ -174,14 +174,18 @@ else
         {
             @foreach (var session in group.Sessions.OrderBy(s => s.ScheduledAt))
             {
-                <div class="session-card @(session.IsUpcoming ? "upcoming" : "past") mb-2">
+                <div class="session-card @((session.IsUpcoming || session.IsActive) ? "upcoming" : "past") mb-2">
                     <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:12px;">
                         <div style="flex:1; min-width:0;">
                             <div style="display:flex; align-items:center; gap:8px; margin-bottom:4px; flex-wrap:wrap;">
                                 <h6 style="margin:0; font-size:0.875rem; font-weight:600; color:var(--text-primary);">
                                     @session.Title
                                 </h6>
-                                @if (session.IsUpcoming)
+                                @if (session.IsActive)
+                                {
+                                    <span class="badge badge-success">Live</span>
+                                }
+                                else if (session.IsUpcoming)
                                 {
                                     <span class="badge badge-primary">Upcoming</span>
                                 }
@@ -195,7 +199,7 @@ else
                                 <p style="margin:0 0 6px; font-size:0.8rem; color:var(--text-secondary);">@session.Description</p>
                             }
                             <div style="display:flex; flex-wrap:wrap; gap:12px; font-size:0.775rem; color:var(--text-secondary);">
-                                <span><i class="bi bi-calendar me-1"></i>@session.ScheduledAt.ToString("MMM dd, yyyy HH:mm")</span>
+                                <span><i class="bi bi-calendar me-1"></i>@FormatLocalDateTime(session.ScheduledAt)</span>
                                 <span><i class="bi bi-clock me-1"></i>@session.DurationMinutes min</span>
                                 <span><i class="bi bi-person me-1"></i>@session.CreatedBy.Name</span>
                             </div>
@@ -588,6 +592,15 @@ else
     private void JoinVideoCall(Guid sessionId)
     {
         NavigationManager.NavigateTo($"/video-call/{sessionId}");
+    }
+
+    private static string FormatLocalDateTime(DateTime dateTime)
+    {
+        var utc = dateTime.Kind == DateTimeKind.Unspecified
+            ? DateTime.SpecifyKind(dateTime, DateTimeKind.Utc)
+            : dateTime.ToUniversalTime();
+
+        return utc.ToLocalTime().ToString("MMM dd, yyyy h:mm tt");
     }
 
     private async Task DeleteResource(Guid id)

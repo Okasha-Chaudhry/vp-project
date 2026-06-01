@@ -66,7 +66,7 @@
         <header class="video-topbar">
             <div>
                 <h1>@session.Title</h1>
-                <p>@session.ScheduledAt.ToLocalTime().ToString("MMM dd, yyyy h:mm tt") &middot; @session.DurationMinutes minutes</p>
+                <p>@FormatLocalDateTime(session.ScheduledAt) &middot; @session.DurationMinutes minutes</p>
             </div>
             <button class="leave-button" @onclick="LeaveCall" title="Leave call">
                 <i class="bi bi-telephone-x-fill"></i>
@@ -103,8 +103,8 @@
         {
             if (session == null) return false;
             var now = DateTime.UtcNow;
-            var starts = session.ScheduledAt.ToUniversalTime().AddMinutes(-15);
-            var ends = session.ScheduledAt.ToUniversalTime().AddMinutes(session.DurationMinutes);
+            var starts = ToUtcDateTime(session.ScheduledAt).AddMinutes(-15);
+            var ends = ToUtcDateTime(session.ScheduledAt).AddMinutes(session.DurationMinutes);
             return now >= starts && now <= ends;
         }
     }
@@ -176,7 +176,7 @@
     private string GetWaitingTitle()
     {
         if (session == null) return "Session Unavailable";
-        return DateTime.UtcNow < session.ScheduledAt.ToUniversalTime().AddMinutes(-15)
+        return DateTime.UtcNow < ToUtcDateTime(session.ScheduledAt).AddMinutes(-15)
             ? "Session Not Ready Yet"
             : "Session Has Ended";
     }
@@ -185,8 +185,8 @@
     {
         if (session == null) return "";
 
-        var joinTime = session.ScheduledAt.ToLocalTime().AddMinutes(-15);
-        var endTime = session.ScheduledAt.ToLocalTime().AddMinutes(session.DurationMinutes);
+        var joinTime = ToLocalDateTime(session.ScheduledAt).AddMinutes(-15);
+        var endTime = ToLocalDateTime(session.ScheduledAt).AddMinutes(session.DurationMinutes);
 
         if (DateTime.Now < joinTime)
         {
@@ -214,6 +214,17 @@
     {
         NavigationManager.NavigateTo("/sessions");
     }
+
+    private static DateTime ToUtcDateTime(DateTime dateTime)
+        => dateTime.Kind == DateTimeKind.Unspecified
+            ? DateTime.SpecifyKind(dateTime, DateTimeKind.Utc)
+            : dateTime.ToUniversalTime();
+
+    private static DateTime ToLocalDateTime(DateTime dateTime)
+        => ToUtcDateTime(dateTime).ToLocalTime();
+
+    private static string FormatLocalDateTime(DateTime dateTime)
+        => ToLocalDateTime(dateTime).ToString("MMM dd, yyyy h:mm tt");
 
     public async ValueTask DisposeAsync()
     {

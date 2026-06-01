@@ -43,8 +43,8 @@ else
                 <i class="bi bi-calendar-check"></i>
             </div>
             <div>
-                <div style="font-size:1.1rem;font-weight:700;color:var(--text-primary);">@upcomingCount</div>
-                <div class="fs-xs text-muted">Upcoming</div>
+                <div style="font-size:1.1rem;font-weight:700;color:var(--text-primary);">@openCount</div>
+                <div class="fs-xs text-muted">Open / Upcoming</div>
             </div>
         </div>
         <div style="background:var(--surface); border:1px solid var(--border); border-radius:var(--radius-sm); padding:12px 18px; display:flex; align-items:center; gap:10px;">
@@ -83,11 +83,11 @@ else
     else
     {
         <!-- Upcoming -->
-        var upcoming = sessions.Where(s => s.IsUpcoming).OrderBy(s => s.ScheduledAt).ToList();
+        var upcoming = sessions.Where(s => s.IsUpcoming || s.IsActive).OrderBy(s => s.ScheduledAt).ToList();
         {
             <div class="section-title mb-3">
                 <i class="bi bi-clock-fill me-1" style="color:var(--primary);"></i>
-                Upcoming Sessions
+                Open & Upcoming Sessions
             </div>
             @foreach (var session in upcoming)
             {
@@ -99,14 +99,21 @@ else
                                 <h6 style="margin:0; font-size:0.9rem; font-weight:600; color:var(--text-primary);">
                                     @session.Title
                                 </h6>
-                                <span class="badge badge-primary">Upcoming</span>
+                                @if (session.IsActive)
+                                {
+                                    <span class="badge badge-success">Live</span>
+                                }
+                                else
+                                {
+                                    <span class="badge badge-primary">Upcoming</span>
+                                }
                             </div>
                             @if (!string.IsNullOrEmpty(session.Description))
                             {
                                 <p style="margin:0 0 8px; font-size:0.825rem; color:var(--text-secondary);">@session.Description</p>
                             }
                             <div style="display:flex; flex-wrap:wrap; gap:14px; font-size:0.775rem; color:var(--text-secondary);">
-                                <span><i class="bi bi-calendar me-1"></i>@session.ScheduledAt.ToString("MMM dd, yyyy • HH:mm")</span>
+                                <span><i class="bi bi-calendar me-1"></i>@FormatLocalDateTime(session.ScheduledAt)</span>
                                 <span><i class="bi bi-clock me-1"></i>@session.DurationMinutes min</span>
                                 <span><i class="bi bi-people me-1"></i>@groupName</span>
                                 <span><i class="bi bi-person me-1"></i>@session.CreatedBy.Name</span>
@@ -141,7 +148,7 @@ else
         }
 
         <!-- Past -->
-        var past = sessions.Where(s => !s.IsUpcoming).OrderByDescending(s => s.ScheduledAt).ToList();
+        var past = sessions.Where(s => !s.IsUpcoming && !s.IsActive).OrderByDescending(s => s.ScheduledAt).ToList();
         {
             <div class="section-title mb-3 mt-4">
                 <i class="bi bi-archive me-1" style="color:var(--text-tertiary);"></i>
@@ -158,7 +165,7 @@ else
                                 <span class="badge badge-secondary">Past</span>
                             </div>
                             <div style="display:flex; flex-wrap:wrap; gap:14px; font-size:0.775rem; color:var(--text-secondary);">
-                                <span><i class="bi bi-calendar me-1"></i>@session.ScheduledAt.ToString("MMM dd, yyyy • HH:mm")</span>
+                                <span><i class="bi bi-calendar me-1"></i>@FormatLocalDateTime(session.ScheduledAt)</span>
                                 <span><i class="bi bi-clock me-1"></i>@session.DurationMinutes min</span>
                                 <span><i class="bi bi-people me-1"></i>@groupName</span>
                             </div>
@@ -174,8 +181,8 @@ else
     private List<StudyGroupDto> groups = new();
     private List<SessionDtoExt> sessions = new();
     private bool isLoading = true;
-    private int upcomingCount => sessions.Count(s => s.IsUpcoming);
-    private int pastCount => sessions.Count(s => !s.IsUpcoming);
+    private int openCount => sessions.Count(s => s.IsUpcoming || s.IsActive);
+    private int pastCount => sessions.Count(s => !s.IsUpcoming && !s.IsActive);
 
     protected override async Task OnInitializedAsync()
     {
@@ -219,7 +226,7 @@ else
 
     private string GetTimeUntil(DateTime scheduledAt)
     {
-        var timeUntil = scheduledAt - DateTime.Now;
+        var timeUntil = ToLocalDateTime(scheduledAt) - DateTime.Now;
         if (timeUntil.TotalHours >= 1)
             return $"{(int)timeUntil.TotalHours}h {timeUntil.Minutes}m";
         else if (timeUntil.TotalMinutes >= 1)
@@ -230,9 +237,20 @@ else
             return "Started";
     }
 
+    private static DateTime ToLocalDateTime(DateTime dateTime)
+    {
+        var utc = dateTime.Kind == DateTimeKind.Unspecified
+            ? DateTime.SpecifyKind(dateTime, DateTimeKind.Utc)
+            : dateTime.ToUniversalTime();
+
+        return utc.ToLocalTime();
+    }
+
+    private static string FormatLocalDateTime(DateTime dateTime)
+        => ToLocalDateTime(dateTime).ToString("MMM dd, yyyy h:mm tt");
+
     public class SessionDtoExt : SessionDto
     {
         public Guid GroupId { get; set; }
     }
 }
-
