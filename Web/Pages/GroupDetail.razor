@@ -201,10 +201,17 @@ else
                             </div>
                         </div>
                         <div style="display:flex; gap:6px; flex-shrink:0;">
-                            @if (!string.IsNullOrEmpty(session.MeetingLink))
+                            @if (session.UseBuiltInVideoCall)
+                            {
+                                <button class="btn btn-primary btn-sm" @onclick="() => JoinVideoCall(session.Id)">
+                                    <i class="bi bi-camera-video-fill"></i>
+                                    @(session.IsActive ? "Join Video" : "Video Room")
+                                </button>
+                            }
+                            else if (!string.IsNullOrEmpty(session.MeetingLink))
                             {
                                 <button class="btn btn-primary btn-sm" @onclick="() => OpenResource(session.MeetingLink!)">
-                                    <i class="bi bi-camera-video-fill"></i> Join
+                                    <i class="bi bi-box-arrow-up-right"></i> Open Link
                                 </button>
                             }
                             <button class="btn btn-sm btn-secondary" style="color:var(--danger);"
@@ -576,6 +583,11 @@ else
             await JSRuntime.InvokeVoidAsync("open", content, "_blank");
         else
             await JSRuntime.InvokeVoidAsync("alert", content);
+    }
+
+    private void JoinVideoCall(Guid sessionId)
+    {
+        NavigationManager.NavigateTo($"/video-call/{sessionId}");
     }
 
     private async Task DeleteResource(Guid id)

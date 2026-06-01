@@ -87,14 +87,28 @@ public class SessionService : ISessionService
         return session == null ? null : MapToDto(session);
     }
 
+    public async Task<StudySessionDto?> GetSessionForUserAsync(Guid sessionId, Guid userId)
+    {
+        var session = await _sessionRepository.GetByIdAsync(sessionId);
+        if (session == null) return null;
+
+        var isMember = await _groupRepository.IsMemberAsync(session.GroupId, userId);
+        if (!isMember) throw new UnauthorizedAccessException("You are not a member of this group");
+
+        return MapToDto(session);
+    }
+
     private StudySessionDto MapToDto(StudySession session)
     {
+        var joinWindowStart = session.ScheduledAt.AddMinutes(-15);
         var isUpcoming = session.ScheduledAt > DateTime.UtcNow;
         var sessionEndTime = session.ScheduledAt.AddMinutes(session.DurationMinutes);
-        var isActive = DateTime.UtcNow >= session.ScheduledAt && DateTime.UtcNow <= sessionEndTime;
+        var isActive = DateTime.UtcNow >= joinWindowStart && DateTime.UtcNow <= sessionEndTime;
 
         var jitsiServer = _configuration["Jitsi:ServerUrl"] ?? "https://meet.jit.si";
-        var videoCallUrl = isActive ? $"{jitsiServer}/{Uri.EscapeDataString(session.RoomName)}" : null;
+        var videoCallUrl = session.UseBuiltInVideoCall
+            ? $"{jitsiServer.TrimEnd('/')}/{Uri.EscapeDataString(session.RoomName)}"
+            : session.MeetingLink;
 
         return new StudySessionDto
         {

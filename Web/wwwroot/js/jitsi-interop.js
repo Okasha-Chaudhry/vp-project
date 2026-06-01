@@ -1,113 +1,97 @@
-// Jitsi Meet Interop Functions
-let jitsiApi = null;
+(function () {
+    let api = null;
+    let scriptPromise = null;
 
-window.initializeJitsiMeeting = function(options) {
-    const container = document.getElementById(options.parentNode);
-    
-    if (!container) {
-        console.error('Jitsi container not found');
-        return;
+    function loadJitsiApi(domain) {
+        if (window.JitsiMeetExternalAPI) {
+            return Promise.resolve();
+        }
+
+        if (scriptPromise) {
+            return scriptPromise;
+        }
+
+        scriptPromise = new Promise((resolve, reject) => {
+            const script = document.createElement("script");
+            script.src = `https://${domain}/external_api.js`;
+            script.async = true;
+            script.onload = resolve;
+            script.onerror = () => reject(new Error("Could not load the Jitsi Meet API."));
+            document.head.appendChild(script);
+        });
+
+        return scriptPromise;
     }
 
-    // Wait for JitsiMeetExternalAPI to be available
-    const waitForJitsi = setInterval(() => {
-        if (window.JitsiMeetExternalAPI) {
-            clearInterval(waitForJitsi);
-            
-            try {
-                jitsiApi = new window.JitsiMeetExternalAPI(
-                    new URL(options.configOverwrite?.serverUrl || 'https://meet.jit.si').hostname,
-                    {
-                        roomName: options.roomName,
-                        width: options.width,
-                        height: options.height,
-                        parentNode: options.parentNode,
-                        userInfo: {
-                            email: options.userInfo?.email || '',
-                            displayName: options.userInfo?.displayName || 'User'
-                        },
-                        configOverwrite: options.configOverwrite || {},
-                        interfaceConfigOverwrite: options.interfaceConfigOverwrite || {}
-                    }
-                );
+    window.studyConnectVideo = {
+        async start(options) {
+            const domain = options.domain || "meet.jit.si";
+            const container = document.getElementById(options.containerId);
 
-                // Add event listeners
-                jitsiApi.addEventListener('videoConferenceJoined', onVideoConferenceJoined);
-                jitsiApi.addEventListener('videoConferenceLocked', onVideoConferenceLocked);
-                jitsiApi.addEventListener('videoConferenceLeft', onVideoConferenceLeft);
-                jitsiApi.addEventListener('readyToClose', onReadyToClose);
-                jitsiApi.addEventListener('participantJoined', onParticipantJoined);
-                jitsiApi.addEventListener('participantLeft', onParticipantLeft);
-                jitsiApi.addEventListener('displayNameChanged', onDisplayNameChanged);
-                jitsiApi.addEventListener('participantKickedOut', onParticipantKickedOut);
-                jitsiApi.addEventListener('audioAvailabilityChanged', onAudioAvailabilityChanged);
-                jitsiApi.addEventListener('videoAvailabilityChanged', onVideoAvailabilityChanged);
+            if (!container) {
+                throw new Error(`Video container '${options.containerId}' was not found.`);
+            }
 
-                console.log('Jitsi Meeting initialized successfully');
-            } catch (error) {
-                console.error('Error initializing Jitsi:', error);
+            if (!options.roomName) {
+                throw new Error("A room name is required to start the video call.");
+            }
+
+            await this.stop();
+            await loadJitsiApi(domain);
+
+            container.innerHTML = "";
+
+            api = new window.JitsiMeetExternalAPI(domain, {
+                roomName: options.roomName,
+                parentNode: container,
+                width: "100%",
+                height: "100%",
+                userInfo: {
+                    email: options.email || "",
+                    displayName: options.displayName || "StudyConnect User"
+                },
+                configOverwrite: {
+                    prejoinPageEnabled: true,
+                    startWithAudioMuted: false,
+                    startWithVideoMuted: false,
+                    disableDeepLinking: true,
+                    enableWelcomePage: false,
+                    ...options.configOverwrite
+                },
+                interfaceConfigOverwrite: {
+                    SHOW_CHROME_EXTENSION_BANNER: false,
+                    MOBILE_APP_PROMO: false,
+                    TOOLBAR_BUTTONS: [
+                        "microphone",
+                        "camera",
+                        "desktop",
+                        "fullscreen",
+                        "fodeviceselection",
+                        "hangup",
+                        "chat",
+                        "settings",
+                        "raisehand",
+                        "videoquality",
+                        "filmstrip",
+                        "tileview",
+                        "shortcuts"
+                    ],
+                    ...options.interfaceConfigOverwrite
+                }
+            });
+
+            api.addListener("readyToClose", () => {
+                window.dispatchEvent(new CustomEvent("studyconnect-video-closed"));
+            });
+
+            return true;
+        },
+
+        async stop() {
+            if (api) {
+                api.dispose();
+                api = null;
             }
         }
-    }, 100);
-
-    // Set timeout to stop waiting after 10 seconds
-    setTimeout(() => {
-        clearInterval(waitForJitsi);
-        if (!jitsiApi) {
-            console.error('Jitsi API failed to load');
-        }
-    }, 10000);
-};
-
-window.disposeJitsiMeeting = function() {
-    if (jitsiApi) {
-        try {
-            jitsiApi.dispose();
-            jitsiApi = null;
-            console.log('Jitsi Meeting disposed');
-        } catch (error) {
-            console.error('Error disposing Jitsi:', error);
-        }
-    }
-};
-
-// Event handlers
-function onVideoConferenceJoined() {
-    console.log('Video conference joined');
-}
-
-function onVideoConferenceLocked() {
-    console.log('Video conference locked');
-}
-
-function onVideoConferenceLeft() {
-    console.log('Video conference left');
-}
-
-function onReadyToClose() {
-    console.log('Ready to close');
-}
-
-function onParticipantJoined(participant) {
-    console.log('Participant joined:', participant);
-}
-
-function onParticipantLeft(participant) {
-    console.log('Participant left:', participant);
-}
-
-function onDisplayNameChanged(data) {
-    console.log('Display name changed:', data);
-}
-
-function onParticipantKickedOut(data) {
-    console.log('Participant kicked out:', data);
-}
-
-function onAudioAvailabilityChanged(data) {
-    console.log('Audio availability changed:', data);
-}
-
-function onVideoAvailabilityChanged(data) {
-    console.log('Video availability changed:', data);
-}
+    };
+})();

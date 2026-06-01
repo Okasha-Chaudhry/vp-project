@@ -6,8 +6,7 @@ using StudyConnect.API.Services.Interfaces;
 namespace StudyConnect.API.Controllers;
 
 [ApiController]
-[Route("api/groups/{groupId:guid}/[controller]")]
-[Route("api/[controller]")]
+[Route("api")]
 [Authorize]
 public class SessionsController : ControllerBase
 {
@@ -24,16 +23,25 @@ public class SessionsController : ControllerBase
         return claim == null ? Guid.Empty : Guid.Parse(claim.Value);
     }
 
-    // GET /api/sessions/{id} - Get any session by ID (for video calls)
-    [HttpGet("{id:guid}")]
+    [HttpGet("sessions/{id:guid}")]
     public async Task<IActionResult> GetSessionById(Guid id)
     {
-        var session = await _sessionService.GetSessionByIdAsync(id);
-        if (session == null) return NotFound();
-        return Ok(session);
+        var userId = GetUserId();
+        if (userId == Guid.Empty) return Unauthorized();
+
+        try
+        {
+            var session = await _sessionService.GetSessionForUserAsync(id, userId);
+            if (session == null) return NotFound();
+            return Ok(session);
+        }
+        catch (UnauthorizedAccessException)
+        {
+            return Forbid();
+        }
     }
 
-    [HttpGet]
+    [HttpGet("groups/{groupId:guid}/sessions")]
     public async Task<IActionResult> GetGroupSessions(Guid groupId)
     {
         var userId = GetUserId();
@@ -44,21 +52,31 @@ public class SessionsController : ControllerBase
             var sessions = await _sessionService.GetGroupSessionsAsync(groupId, userId);
             return Ok(sessions);
         }
-        catch (UnauthorizedAccessException ex)
+        catch (UnauthorizedAccessException)
         {
             return Forbid();
         }
     }
 
-    [HttpGet("{id:guid}")]
+    [HttpGet("groups/{groupId:guid}/sessions/{id:guid}")]
     public async Task<IActionResult> GetSession(Guid groupId, Guid id)
     {
-        var session = await _sessionService.GetSessionByIdAsync(id);
-        if (session == null) return NotFound();
-        return Ok(session);
+        var userId = GetUserId();
+        if (userId == Guid.Empty) return Unauthorized();
+
+        try
+        {
+            var session = await _sessionService.GetSessionForUserAsync(id, userId);
+            if (session == null) return NotFound();
+            return Ok(session);
+        }
+        catch (UnauthorizedAccessException)
+        {
+            return Forbid();
+        }
     }
 
-    [HttpPost]
+    [HttpPost("groups/{groupId:guid}/sessions")]
     public async Task<IActionResult> CreateSession(Guid groupId, [FromBody] CreateSessionRequest request)
     {
         if (!ModelState.IsValid)
@@ -72,13 +90,13 @@ public class SessionsController : ControllerBase
             var session = await _sessionService.CreateSessionAsync(userId, groupId, request);
             return CreatedAtAction(nameof(GetSession), new { groupId, id = session.Id }, session);
         }
-        catch (UnauthorizedAccessException ex)
+        catch (UnauthorizedAccessException)
         {
             return Forbid();
         }
     }
 
-    [HttpPut("{id:guid}")]
+    [HttpPut("groups/{groupId:guid}/sessions/{id:guid}")]
     public async Task<IActionResult> UpdateSession(Guid groupId, Guid id, [FromBody] UpdateSessionRequest request)
     {
         if (!ModelState.IsValid)
@@ -93,13 +111,13 @@ public class SessionsController : ControllerBase
             if (session == null) return NotFound();
             return Ok(session);
         }
-        catch (UnauthorizedAccessException ex)
+        catch (UnauthorizedAccessException)
         {
             return Forbid();
         }
     }
 
-    [HttpDelete("{id:guid}")]
+    [HttpDelete("groups/{groupId:guid}/sessions/{id:guid}")]
     public async Task<IActionResult> DeleteSession(Guid groupId, Guid id)
     {
         var userId = GetUserId();

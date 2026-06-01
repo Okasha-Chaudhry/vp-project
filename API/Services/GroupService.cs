@@ -103,9 +103,16 @@ public class GroupService : IGroupService
                 ScheduledAt = s.ScheduledAt,
                 DurationMinutes = s.DurationMinutes,
                 MeetingLink = s.MeetingLink,
+                RoomName = s.RoomName,
+                VideoCallUrl = s.UseBuiltInVideoCall
+                    ? $"https://meet.jit.si/{Uri.EscapeDataString(s.RoomName)}"
+                    : s.MeetingLink,
+                UseBuiltInVideoCall = s.UseBuiltInVideoCall,
                 CreatedBy = MapToUserDto(s.CreatedBy),
                 CreatedAt = s.CreatedAt,
-                IsUpcoming = s.ScheduledAt > DateTime.UtcNow
+                IsUpcoming = s.ScheduledAt > DateTime.UtcNow,
+                IsActive = DateTime.UtcNow >= s.ScheduledAt.AddMinutes(-15)
+                    && DateTime.UtcNow <= s.ScheduledAt.AddMinutes(s.DurationMinutes)
             }).ToList(),
             Tasks = group.Tasks.Select(t => new GroupTaskDto
             {

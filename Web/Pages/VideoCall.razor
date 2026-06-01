@@ -1,368 +1,340 @@
-@page "/video-call/{SessionId}"
+@page "/video-call/{SessionId:guid}"
 @using Microsoft.AspNetCore.Components.Authorization
-@using StudyConnect.Web.Services
 @attribute [Authorize]
+@implements IAsyncDisposable
 @inject ISessionService SessionService
 @inject IJSRuntime JSRuntime
 @inject NavigationManager NavigationManager
 @inject AuthenticationStateProvider AuthStateProvider
 
-<PageTitle>Video Call — StudyConnect</PageTitle>
+<PageTitle>@(session == null ? "Video Call - StudyConnect" : $"{session.Title} - Video Call")</PageTitle>
 
-<div class="video-call-container">
+<div class="video-shell">
     @if (isLoading)
     {
-        <div class="video-loading">
+        <div class="video-state">
             <div class="spinner"></div>
-            <span>Loading video call...</span>
+            <span>Preparing video room...</span>
         </div>
     }
-    else if (session == null)
+    else if (!string.IsNullOrEmpty(errorMessage))
     {
-        <div class="video-error">
-            <i class="bi bi-exclamation-circle-fill"></i>
-            <h4>Session Not Found</h4>
-            <p>The session you're trying to join doesn't exist or you don't have access.</p>
-            <a href="/sessions" class="btn btn-primary">Back to Sessions</a>
+        <div class="video-state">
+            <i class="bi bi-exclamation-circle-fill danger"></i>
+            <h1>Video Call Unavailable</h1>
+            <p>@errorMessage</p>
+            <button class="btn btn-primary" @onclick="BackToSessions">
+                <i class="bi bi-arrow-left"></i>
+                Back to Sessions
+            </button>
         </div>
     }
-    else if (!session.IsActive && DateTime.UtcNow < session.ScheduledAt)
+    else if (session != null && !session.UseBuiltInVideoCall)
     {
-        <div class="video-waiting">
-            <div class="waiting-card">
-                <i class="bi bi-clock-history"></i>
-                <h4>Session Not Started Yet</h4>
-                <p>@session.Title</p>
-                <div class="session-time">
-                    Starts at: <strong>@session.ScheduledAt.ToLocalTime().ToString("g")</strong>
-                </div>
-                <div class="waiting-info">
-                    <p>Come back when the session starts to join the video call.</p>
-                </div>
-                <a href="/sessions" class="btn btn-secondary">Back to Sessions</a>
-            </div>
-        </div>
-    }
-    else if (session.IsActive)
-    {
-        <div class="video-header">
-            <div class="video-header-left">
-                <h2>@session.Title</h2>
-                <p class="video-subtitle">Group Study Session</p>
-            </div>
-            <div class="video-header-right">
-                <button class="btn-icon-sm" @onclick="LeaveCall" title="Leave Call">
-                    <i class="bi bi-x-lg"></i>
+        <div class="video-state">
+            <i class="bi bi-box-arrow-up-right"></i>
+            <h1>External Meeting</h1>
+            <p>This session uses an external meeting link.</p>
+            <div class="video-actions">
+                @if (!string.IsNullOrEmpty(session.MeetingLink))
+                {
+                    <button class="btn btn-primary" @onclick="OpenExternalMeeting">
+                        <i class="bi bi-camera-video-fill"></i>
+                        Open Meeting
+                    </button>
+                }
+                <button class="btn btn-secondary" @onclick="BackToSessions">
+                    Back to Sessions
                 </button>
             </div>
         </div>
-
-        <div id="jitsi-container" class="jitsi-container"></div>
     }
-    else
+    else if (session != null && !CanJoin)
     {
-        <div class="video-ended">
-            <div class="ended-card">
-                <i class="bi bi-check-circle-fill"></i>
-                <h4>Session Ended</h4>
-                <p>@session.Title</p>
-                <p class="text-muted fs-sm">This session ended on @session.ScheduledAt.AddMinutes(session.DurationMinutes).ToLocalTime().ToString("g")</p>
-                <a href="/sessions" class="btn btn-primary">Back to Sessions</a>
-            </div>
+        <div class="video-state">
+            <i class="bi bi-clock-history"></i>
+            <h1>@GetWaitingTitle()</h1>
+            <p>@session.Title</p>
+            <div class="session-time">@GetWaitingMessage()</div>
+            <button class="btn btn-secondary" @onclick="BackToSessions">
+                Back to Sessions
+            </button>
         </div>
+    }
+    else if (session != null)
+    {
+        <header class="video-topbar">
+            <div>
+                <h1>@session.Title</h1>
+                <p>@session.ScheduledAt.ToLocalTime().ToString("MMM dd, yyyy h:mm tt") &middot; @session.DurationMinutes minutes</p>
+            </div>
+            <button class="leave-button" @onclick="LeaveCall" title="Leave call">
+                <i class="bi bi-telephone-x-fill"></i>
+                Leave
+            </button>
+        </header>
+
+        @if (!string.IsNullOrEmpty(connectionMessage))
+        {
+            <div class="video-banner">
+                <i class="bi bi-info-circle"></i>
+                @connectionMessage
+            </div>
+        }
+
+        <div id="studyconnect-jitsi" class="video-frame"></div>
     }
 </div>
 
 @code {
-    [Parameter]
-    public string SessionId { get; set; } = string.Empty;
+    [Parameter] public Guid SessionId { get; set; }
 
-    private Models.SessionDto? session;
+    private SessionDto? session;
     private bool isLoading = true;
-    private string? userName;
-    private string? userEmail;
+    private bool hasStartedVideo;
+    private string? errorMessage;
+    private string? connectionMessage;
+    private string displayName = "StudyConnect User";
+    private string email = "";
+
+    private bool CanJoin
+    {
+        get
+        {
+            if (session == null) return false;
+            var now = DateTime.UtcNow;
+            var starts = session.ScheduledAt.ToUniversalTime().AddMinutes(-15);
+            var ends = session.ScheduledAt.ToUniversalTime().AddMinutes(session.DurationMinutes);
+            return now >= starts && now <= ends;
+        }
+    }
 
     protected override async Task OnInitializedAsync()
     {
         try
         {
-            if (!Guid.TryParse(SessionId, out var sessionId))
-            {
-                NavigationManager.NavigateTo("/sessions");
-                return;
-            }
+            var authState = await AuthStateProvider.GetAuthenticationStateAsync();
+            displayName = authState.User.FindFirst(System.Security.Claims.ClaimTypes.Name)?.Value ?? displayName;
+            email = authState.User.FindFirst(System.Security.Claims.ClaimTypes.Email)?.Value ?? "";
 
-            // Get session details
-            session = await SessionService.GetSessionByIdAsync(sessionId);
-            
+            session = await SessionService.GetSessionByIdAsync(SessionId);
             if (session == null)
             {
-                isLoading = false;
-                return;
+                errorMessage = "The session does not exist, or you are not a member of its group.";
             }
-
-            // Get user info from auth state
-            var authState = await AuthStateProvider.GetAuthenticationStateAsync();
-            if (authState.User.Identity?.IsAuthenticated == true)
+            else if (string.IsNullOrWhiteSpace(session.RoomName) && session.UseBuiltInVideoCall)
             {
-                userName = authState.User.FindFirst(System.Security.Claims.ClaimTypes.Name)?.Value ?? "User";
-                userEmail = authState.User.FindFirst(System.Security.Claims.ClaimTypes.Email)?.Value ?? "";
+                errorMessage = "This session does not have a video room. Create a new session and enable built-in video.";
             }
-
-            isLoading = false;
         }
-        catch (Exception ex)
+        catch
         {
-            Console.WriteLine($"Error loading session: {ex.Message}");
+            errorMessage = "Could not load the session. Please check that the API is running and try again.";
+        }
+        finally
+        {
             isLoading = false;
         }
     }
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
-        if (firstRender && session?.IsActive == true && session.RoomName != null)
+        if (!hasStartedVideo && !isLoading && errorMessage == null && session?.UseBuiltInVideoCall == true && CanJoin)
         {
-            try
-            {
-                // Load and initialize Jitsi
-                await InitializeJitsi();
-            }
-            catch (Exception ex)
-            {
-                Console.WriteLine($"Error initializing Jitsi: {ex.Message}");
-            }
+            hasStartedVideo = true;
+            await StartVideoCall();
         }
     }
 
-    private async Task InitializeJitsi()
+    private async Task StartVideoCall()
     {
-        // Load Jitsi IFrame API
-        await JSRuntime.InvokeVoidAsync("eval", 
-            """
-            (function() {
-                const script = document.createElement('script');
-                script.src = 'https://meet.jit.si/external_api.js';
-                script.async = true;
-                document.head.appendChild(script);
-            })();
-            """);
-
-        // Wait a moment for the API to load
-        await Task.Delay(500);
-
-        // Initialize the meeting
-        if (!string.IsNullOrEmpty(session?.RoomName))
+        try
         {
-            var options = new
-            {
-                roomName = session.RoomName,
-                width = "100%",
-                height = "100%",
-                parentNode = "jitsi-container",
-                userInfo = new
-                {
-                    email = userEmail ?? "",
-                    displayName = userName ?? "User"
-                },
-                configOverwrite = new
-                {
-                    disableSimulcast = false,
-                    enableLayerSuspension = true,
-                    startScreenSharing = false,
-                    startWithVideoMuted = false,
-                    startWithAudioMuted = false,
-                    enableWelcomePage = true,
-                    prejoinPageEnabled = false
-                },
-                interfaceConfigOverwrite = new
-                {
-                    SHOW_CHROME_EXTENSION_BANNER = false,
-                    MOBILE_APP_PROMO = false,
-                    TOOLBAR_BUTTONS = new object[] {
-                        "microphone",
-                        "camera",
-                        "desktop",
-                        "fullscreen",
-                        "fodeviceselection",
-                        "hangup",
-                        "chat",
-                        "settings",
-                        "raisehand",
-                        "videoquality",
-                        "filmstrip",
-                        "feedback",
-                        "stats",
-                        "shortcuts",
-                        "tileview",
-                        "toggle-camera",
-                        "download-transcript"
-                    }
-                }
-            };
+            connectionMessage = "Connecting to the video room...";
+            StateHasChanged();
 
-            try
+            await JSRuntime.InvokeVoidAsync("studyConnectVideo.start", new
             {
-                await JSRuntime.InvokeVoidAsync("initializeJitsiMeeting", options);
-            }
-            catch (Exception ex)
-            {
-                Console.WriteLine($"Error calling Jitsi: {ex.Message}");
-            }
+                domain = "meet.jit.si",
+                containerId = "studyconnect-jitsi",
+                roomName = session!.RoomName,
+                displayName,
+                email
+            });
+
+            connectionMessage = null;
+            StateHasChanged();
+        }
+        catch (Exception ex)
+        {
+            errorMessage = $"Could not start the video room: {ex.Message}";
+            connectionMessage = null;
+            StateHasChanged();
+        }
+    }
+
+    private string GetWaitingTitle()
+    {
+        if (session == null) return "Session Unavailable";
+        return DateTime.UtcNow < session.ScheduledAt.ToUniversalTime().AddMinutes(-15)
+            ? "Session Not Ready Yet"
+            : "Session Has Ended";
+    }
+
+    private string GetWaitingMessage()
+    {
+        if (session == null) return "";
+
+        var joinTime = session.ScheduledAt.ToLocalTime().AddMinutes(-15);
+        var endTime = session.ScheduledAt.ToLocalTime().AddMinutes(session.DurationMinutes);
+
+        if (DateTime.Now < joinTime)
+        {
+            return $"Video opens at {joinTime:g}.";
+        }
+
+        return $"This session ended at {endTime:g}.";
+    }
+
+    private async Task OpenExternalMeeting()
+    {
+        if (!string.IsNullOrEmpty(session?.MeetingLink))
+        {
+            await JSRuntime.InvokeVoidAsync("open", session.MeetingLink, "_blank");
         }
     }
 
     private async Task LeaveCall()
     {
+        await JSRuntime.InvokeVoidAsync("studyConnectVideo.stop");
+        BackToSessions();
+    }
+
+    private void BackToSessions()
+    {
+        NavigationManager.NavigateTo("/sessions");
+    }
+
+    public async ValueTask DisposeAsync()
+    {
         try
         {
-            // Clean up Jitsi API
-            await JSRuntime.InvokeVoidAsync("disposeJitsiMeeting");
+            await JSRuntime.InvokeVoidAsync("studyConnectVideo.stop");
         }
-        catch { }
-
-        NavigationManager.NavigateTo("/sessions");
+        catch
+        {
+            // The JS runtime may already be gone during navigation.
+        }
     }
 }
 
 <style>
-.video-call-container {
+.video-shell {
     height: 100vh;
+    min-height: 560px;
+    background: #050816;
+    color: #fff;
     display: flex;
     flex-direction: column;
-    background: #000;
-    color: white;
 }
 
-.video-loading,
-.video-error,
-.video-waiting,
-.video-ended {
+.video-state {
     flex: 1;
     display: flex;
+    flex-direction: column;
     align-items: center;
     justify-content: center;
-    padding: 20px;
-}
-
-.video-loading {
-    flex-direction: column;
-    gap: 20px;
-}
-
-.video-error,
-.video-waiting,
-.video-ended {
-    background: linear-gradient(135deg, #0F172A 0%, #1e293b 100%);
-}
-
-.video-error .spinner,
-.video-loading .spinner {
-    width: 60px;
-    height: 60px;
-    border: 4px solid rgba(255, 255, 255, 0.2);
-    border-top: 4px solid #2563EB;
-    border-radius: 50%;
-    animation: spin 1s linear infinite;
-}
-
-@@keyframes spin {
-    0% { transform: rotate(0deg); }
-    100% { transform: rotate(360deg); }
-}
-
-.waiting-card,
-.ended-card {
-    background: rgba(255, 255, 255, 0.05);
-    border: 1px solid rgba(255, 255, 255, 0.1);
-    border-radius: 12px;
-    padding: 40px;
+    gap: 16px;
+    padding: 24px;
     text-align: center;
-    backdrop-filter: blur(10px);
-    max-width: 400px;
 }
 
-.waiting-card i,
-.ended-card i {
-    font-size: 64px;
-    color: #14B8A6;
-    margin-bottom: 20px;
+.video-state i {
+    font-size: 3.5rem;
+    color: #14b8a6;
 }
 
-.video-error i {
-    font-size: 64px;
-    color: #EF4444;
-    margin-bottom: 20px;
+.video-state i.danger {
+    color: #ef4444;
 }
 
-.waiting-card h4,
-.ended-card h4 {
-    font-size: 1.5rem;
-    margin-bottom: 10px;
+.video-state h1 {
+    margin: 0;
+    font-size: 1.6rem;
 }
 
-.waiting-card p,
-.ended-card p {
-    margin: 10px 0;
-    font-size: 1rem;
+.video-state p {
+    max-width: 520px;
+    margin: 0;
+    color: rgba(255, 255, 255, 0.72);
 }
 
 .session-time {
-    background: rgba(37, 99, 235, 0.1);
-    border: 1px solid rgba(37, 99, 235, 0.3);
+    border: 1px solid rgba(255, 255, 255, 0.14);
+    background: rgba(255, 255, 255, 0.06);
     border-radius: 8px;
-    padding: 12px;
-    margin: 20px 0;
-    font-size: 0.95rem;
+    padding: 10px 14px;
 }
 
-.waiting-info {
-    margin-top: 20px;
-    color: rgba(255, 255, 255, 0.7);
-}
-
-.video-header {
-    background: rgba(0, 0, 0, 0.6);
-    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
-    padding: 16px 20px;
+.video-actions {
     display: flex;
-    justify-content: space-between;
-    align-items: center;
-    backdrop-filter: blur(10px);
-}
-
-.video-header-left h2 {
-    margin: 0;
-    font-size: 1.3rem;
-}
-
-.video-subtitle {
-    margin: 4px 0 0 0;
-    font-size: 0.85rem;
-    opacity: 0.7;
-}
-
-.btn-icon-sm {
-    background: rgba(239, 68, 68, 0.2);
-    border: 1px solid rgba(239, 68, 68, 0.4);
-    color: #EF4444;
-    border-radius: 8px;
-    width: 40px;
-    height: 40px;
-    display: flex;
-    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
     justify-content: center;
-    cursor: pointer;
-    transition: all 0.2s;
 }
 
-.btn-icon-sm:hover {
-    background: rgba(239, 68, 68, 0.3);
-    transform: scale(1.05);
+.video-topbar {
+    height: 74px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    padding: 12px 18px;
+    background: rgba(0, 0, 0, 0.62);
+    border-bottom: 1px solid rgba(255, 255, 255, 0.12);
 }
 
-.jitsi-container {
+.video-topbar h1 {
+    margin: 0;
+    font-size: 1rem;
+    font-weight: 700;
+}
+
+.video-topbar p {
+    margin: 4px 0 0;
+    color: rgba(255, 255, 255, 0.68);
+    font-size: 0.78rem;
+}
+
+.leave-button {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    border: 1px solid rgba(239, 68, 68, 0.42);
+    background: rgba(239, 68, 68, 0.16);
+    color: #fff;
+    border-radius: 8px;
+    padding: 9px 13px;
+    font-weight: 700;
+}
+
+.leave-button:hover {
+    background: rgba(239, 68, 68, 0.28);
+}
+
+.video-banner {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 18px;
+    background: rgba(37, 99, 235, 0.24);
+    color: #dbeafe;
+    font-size: 0.86rem;
+}
+
+.video-frame {
     flex: 1;
-    width: 100%;
+    min-height: 0;
     background: #000;
 }
 </style>

@@ -9,4 +9,5 @@ public interface ISessionService
     Task DeleteSessionAsync(Guid sessionId, Guid userId);
     Task<IEnumerable<StudySessionDto>> GetGroupSessionsAsync(Guid groupId, Guid userId);
     Task<StudySessionDto?> GetSessionByIdAsync(Guid sessionId);
+    Task<StudySessionDto?> GetSessionForUserAsync(Guid sessionId, Guid userId);
 }
