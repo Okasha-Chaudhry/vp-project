@@ -1,0 +1,241 @@
+@page "/groups"
+@attribute [Authorize]
+@inject IGroupService GroupService
+@inject NavigationManager NavigationManager
+
+<PageTitle>Study Groups — StudyConnect</PageTitle>
+
+<div class="page-header">
+    <div class="page-header-left">
+        <h1 class="page-title">Study Groups</h1>
+        <p class="page-subtitle">Manage your collaborative study communities</p>
+    </div>
+    <div class="page-actions">
+        <button class="btn btn-secondary" @onclick="ShowJoinModal">
+            <i class="bi bi-box-arrow-in-right"></i>
+            Join Group
+        </button>
+        <button class="btn btn-primary" @onclick="ShowCreateModal">
+            <i class="bi bi-plus-lg"></i>
+            Create Group
+        </button>
+    </div>
+</div>
+
+@if (!string.IsNullOrEmpty(errorMessage))
+{
+    <div class="alert alert-danger">
+        <i class="bi bi-exclamation-circle-fill"></i>
+        @errorMessage
+    </div>
+}
+@if (!string.IsNullOrEmpty(successMessage))
+{
+    <div class="alert alert-success">
+        <i class="bi bi-check-circle-fill"></i>
+        @successMessage
+    </div>
+}
+
+@if (isLoading)
+{
+    <div style="display:grid; grid-template-columns:repeat(auto-fill, minmax(280px, 1fr)); gap:16px;">
+        @for (int i = 0; i < 6; i++)
+        {
+            <div class="skeleton-card" style="height:190px;">
+                <div class="skeleton" style="width:48px;height:48px;border-radius:8px;margin-bottom:14px;"></div>
+                <div class="skeleton" style="width:70%;height:18px;margin-bottom:8px;"></div>
+                <div class="skeleton" style="width:90%;height:14px;margin-bottom:6px;"></div>
+                <div class="skeleton" style="width:60%;height:14px;"></div>
+            </div>
+        }
+    </div>
+}
+else if (groups.Count == 0)
+{
+    <div class="empty-state">
+        <div class="empty-state-icon"><i class="bi bi-people"></i></div>
+        <h4>No Study Groups Yet</h4>
+        <p>Create your first study group or join an existing one using an invite code.</p>
+        <div class="empty-state-actions">
+            <button class="btn btn-primary" @onclick="ShowCreateModal">
+                <i class="bi bi-plus-lg"></i> Create Group
+            </button>
+            <button class="btn btn-secondary" @onclick="ShowJoinModal">
+                <i class="bi bi-box-arrow-in-right"></i> Join with Code
+            </button>
+        </div>
+    </div>
+}
+else
+{
+    <div class="section-title">All Groups (@groups.Count)</div>
+    <div style="display:grid; grid-template-columns:repeat(auto-fill, minmax(280px, 1fr)); gap:16px;">
+        @{int idx = 0;}
+        @foreach (var group in groups)
+        {
+            int colorIdx = idx % 6;
+            idx++;
+            <div class="group-card" @onclick="() => NavigateToGroup(group.Id)">
+                <div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:12px;">
+                    <div class="group-icon variant-@colorIdx">
+                        <i class="bi bi-book-fill"></i>
+                    </div>
+                    <span class="group-role-badge @(group.UserRole == "Admin" ? "admin" : "member")">
+                        <i class="bi bi-@(group.UserRole == "Admin" ? "shield-check" : "person")"></i>
+                        @group.UserRole
+                    </span>
+                </div>
+                <h5>@group.Name</h5>
+                <p>@(string.IsNullOrEmpty(group.Description) ? "No description provided." : group.Description)</p>
+                <div class="group-meta">
+                    <span><i class="bi bi-people"></i> @group.MemberCount</span>
+                    <span><i class="bi bi-folder2"></i> @group.ResourceCount</span>
+                    <span><i class="bi bi-calendar-event"></i> @group.SessionCount</span>
+                    <span><i class="bi bi-check2-square"></i> @group.TaskCount</span>
+                </div>
+                @if (group.CreatedBy != null)
+                {
+                    <div style="margin-top:12px; padding-top:12px; border-top:1px solid var(--border);">
+                        <span class="fs-xs text-muted">Created by @group.CreatedBy.Name</span>
+                    </div>
+                }
+            </div>
+        }
+    </div>
+}
+
+<!-- Create Modal -->
+@if (showCreateModal)
+{
+    <div class="modal-overlay" @onclick="CloseModals">
+        <div class="modal-card" @onclick:stopPropagation>
+            <div class="modal-header">
+                <h5><i class="bi bi-plus-circle me-2" style="color:var(--primary);"></i>Create Study Group</h5>
+                <button class="modal-close-btn" @onclick="CloseModals"><i class="bi bi-x-lg"></i></button>
+            </div>
+            <EditForm Model="createRequest" OnValidSubmit="HandleCreateSubmit">
+                <DataAnnotationsValidator />
+                <div class="modal-body">
+                    <div class="form-group">
+                        <label class="form-label">Group Name <span class="required-star">*</span></label>
+                        <InputText @bind-Value="createRequest.Name" class="form-control"
+                                   placeholder="e.g., Data Structures &amp; Algorithms" />
+                        <ValidationMessage For="@(() => createRequest.Name)" class="validation-message" />
+                    </div>
+                    <div class="form-group mb-0">
+                        <label class="form-label">Description</label>
+                        <InputTextArea @bind-Value="createRequest.Description" class="form-control" rows="3"
+                                       placeholder="Briefly describe what this group is about..." />
+                        <ValidationMessage For="@(() => createRequest.Description)" class="validation-message" />
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" @onclick="CloseModals">Cancel</button>
+                    <button type="submit" class="btn btn-primary" disabled="@isSubmitting">
+                        @if (isSubmitting) { <span class="spinner spinner-sm"></span> }
+                        Create Group
+                    </button>
+                </div>
+            </EditForm>
+        </div>
+    </div>
+}
+
+<!-- Join Modal -->
+@if (showJoinModal)
+{
+    <div class="modal-overlay" @onclick="CloseModals">
+        <div class="modal-card" @onclick:stopPropagation>
+            <div class="modal-header">
+                <h5><i class="bi bi-box-arrow-in-right me-2" style="color:var(--accent);"></i>Join Study Group</h5>
+                <button class="modal-close-btn" @onclick="CloseModals"><i class="bi bi-x-lg"></i></button>
+            </div>
+            <EditForm Model="joinRequest" OnValidSubmit="HandleJoinSubmit">
+                <DataAnnotationsValidator />
+                <div class="modal-body">
+                    <div class="form-group mb-0">
+                        <label class="form-label">Invite Code <span class="required-star">*</span></label>
+                        <InputText @bind-Value="joinRequest.InviteCode" class="form-control"
+                                   placeholder="ABC12345" maxlength="8"
+                                   style="text-transform:uppercase; letter-spacing:0.2em; font-family:monospace; font-size:1rem;" />
+                        <ValidationMessage For="@(() => joinRequest.InviteCode)" class="validation-message" />
+                        <span class="form-text">The invite code is provided by the group admin (8 characters).</span>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" @onclick="CloseModals">Cancel</button>
+                    <button type="submit" class="btn btn-primary" disabled="@isSubmitting">
+                        @if (isSubmitting) { <span class="spinner spinner-sm"></span> }
+                        Join Group
+                    </button>
+                </div>
+            </EditForm>
+        </div>
+    </div>
+}
+
+@code {
+    private List<StudyGroupDto> groups = new();
+    private bool isLoading = true;
+    private bool showCreateModal = false;
+    private bool showJoinModal = false;
+    private bool isSubmitting = false;
+    private string? errorMessage;
+    private string? successMessage;
+    private CreateGroupRequest createRequest = new();
+    private JoinGroupRequest joinRequest = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadGroups();
+    }
+
+    private async Task LoadGroups()
+    {
+        isLoading = true;
+        groups = await GroupService.GetMyGroupsAsync();
+        isLoading = false;
+    }
+
+    private void NavigateToGroup(Guid groupId) => NavigationManager.NavigateTo($"/groups/{groupId}");
+    private void ShowCreateModal() { createRequest = new(); showCreateModal = true; showJoinModal = false; errorMessage = null; }
+    private void ShowJoinModal() { joinRequest = new(); showJoinModal = true; showCreateModal = false; errorMessage = null; }
+    private void CloseModals() { showCreateModal = false; showJoinModal = false; }
+
+    private async Task HandleCreateSubmit()
+    {
+        isSubmitting = true;
+        errorMessage = null;
+        var group = await GroupService.CreateGroupAsync(createRequest);
+        if (group != null)
+        {
+            successMessage = $"Group \"{group.Name}\" created successfully!";
+            CloseModals();
+            await LoadGroups();
+        }
+        else
+        {
+            errorMessage = "Failed to create group. Please try again.";
+        }
+        isSubmitting = false;
+    }
+
+    private async Task HandleJoinSubmit()
+    {
+        isSubmitting = true;
+        errorMessage = null;
+        var group = await GroupService.JoinGroupAsync(joinRequest);
+        if (group != null)
+        {
+            successMessage = $"You joined \"{group.Name}\" successfully!";
+            CloseModals();
+            await LoadGroups();
+        }
+        else
+        {
+            errorMessage = "Invalid invite code or you're already a member.";
+        }
+        isSubmitting = false;
+    }
+}

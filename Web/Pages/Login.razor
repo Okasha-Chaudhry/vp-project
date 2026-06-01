@@ -1,0 +1,213 @@
+@page "/login"
+@layout EmptyLayout
+@inject IAuthService AuthService
+@inject NavigationManager NavigationManager
+
+<PageTitle>Sign In — StudyConnect</PageTitle>
+
+<div class="login-page">
+    <div class="login-card">
+        <div class="login-logo">
+            <i class="bi bi-people-fill"></i>
+        </div>
+        <h1 class="login-title">StudyConnect</h1>
+        <p class="login-subtitle">Your collaborative learning platform</p>
+
+        <!-- Tabs -->
+        <div class="login-tabs">
+            <button class="login-tab-btn @(_activeTab == "login" ? "active" : "")"
+                    @onclick='() => SwitchTab("login")'>
+                Sign In
+            </button>
+            <button class="login-tab-btn @(_activeTab == "register" ? "active" : "")"
+                    @onclick='() => SwitchTab("register")'>
+                Create Account
+            </button>
+        </div>
+
+        <!-- Error / Success -->
+        @if (!string.IsNullOrEmpty(errorMessage))
+        {
+            <div class="alert alert-danger mb-3">
+                <i class="bi bi-exclamation-circle-fill"></i>
+                @errorMessage
+            </div>
+        }
+        @if (!string.IsNullOrEmpty(successMessage))
+        {
+            <div class="alert alert-success mb-3">
+                <i class="bi bi-check-circle-fill"></i>
+                @successMessage
+            </div>
+        }
+
+        <!-- Login Form -->
+        @if (_activeTab == "login")
+        {
+            <EditForm Model="loginRequest" OnValidSubmit="HandleLogin">
+                <DataAnnotationsValidator />
+                <div class="form-group">
+                    <label class="form-label">Email address</label>
+                    <InputText @bind-Value="loginRequest.Email" class="form-control"
+                               placeholder="you@example.com" type="email" autocomplete="email" />
+                    <ValidationMessage For="@(() => loginRequest.Email)" class="validation-message" />
+                </div>
+                <div class="form-group" style="margin-bottom:20px;">
+                    <label class="form-label">Password</label>
+                    <InputText @bind-Value="loginRequest.Password" class="form-control"
+                               placeholder="Your password" type="password" autocomplete="current-password" />
+                    <ValidationMessage For="@(() => loginRequest.Password)" class="validation-message" />
+                </div>
+                <button type="submit" class="btn btn-primary w-100 btn-lg" disabled="@isLoading">
+                    @if (isLoading)
+                    {
+                        <span class="spinner spinner-sm"></span>
+                        <span>Signing in...</span>
+                    }
+                    else
+                    {
+                        <i class="bi bi-box-arrow-in-right"></i>
+                        <span>Sign In</span>
+                    }
+                </button>
+            </EditForm>
+
+            <div class="login-divider">Don't have an account?</div>
+            <button class="btn btn-secondary w-100" @onclick='() => SwitchTab("register")'>
+                Create a free account
+            </button>
+        }
+
+        <!-- Register Form -->
+        @if (_activeTab == "register")
+        {
+            <EditForm Model="registerRequest" OnValidSubmit="HandleRegister">
+                <DataAnnotationsValidator />
+                <div class="form-group">
+                    <label class="form-label">Full Name</label>
+                    <InputText @bind-Value="registerRequest.Name" class="form-control"
+                               placeholder="John Doe" autocomplete="name" />
+                    <ValidationMessage For="@(() => registerRequest.Name)" class="validation-message" />
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Email address</label>
+                    <InputText @bind-Value="registerRequest.Email" class="form-control"
+                               placeholder="you@example.com" type="email" autocomplete="email" />
+                    <ValidationMessage For="@(() => registerRequest.Email)" class="validation-message" />
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Password <span class="text-muted fs-xs">(min 6 characters)</span></label>
+                    <InputText @bind-Value="registerRequest.Password" class="form-control"
+                               placeholder="Create a strong password" type="password" autocomplete="new-password" />
+                    <ValidationMessage For="@(() => registerRequest.Password)" class="validation-message" />
+                </div>
+                <div class="form-group" style="margin-bottom:20px;">
+                    <label class="form-label">Confirm Password</label>
+                    <InputText @bind-Value="registerRequest.ConfirmPassword" class="form-control"
+                               placeholder="Repeat your password" type="password" autocomplete="new-password" />
+                    <ValidationMessage For="@(() => registerRequest.ConfirmPassword)" class="validation-message" />
+                </div>
+                <button type="submit" class="btn btn-primary w-100 btn-lg" disabled="@isLoading">
+                    @if (isLoading)
+                    {
+                        <span class="spinner spinner-sm"></span>
+                        <span>Creating account...</span>
+                    }
+                    else
+                    {
+                        <i class="bi bi-person-plus-fill"></i>
+                        <span>Create Account</span>
+                    }
+                </button>
+            </EditForm>
+
+            <div class="login-divider">Already have an account?</div>
+            <button class="btn btn-secondary w-100" @onclick='() => SwitchTab("login")'>
+                Sign in instead
+            </button>
+        }
+
+        <p class="login-terms">
+            By continuing, you agree to our
+            <a href="#">Terms of Service</a> and <a href="#">Privacy Policy</a>.
+        </p>
+    </div>
+</div>
+
+@code {
+    private string _activeTab = "login";
+    private bool isLoading = false;
+    private string? errorMessage;
+    private string? successMessage;
+
+    private LoginRequest loginRequest = new();
+    private RegisterRequest registerRequest = new();
+
+    private void SwitchTab(string tab)
+    {
+        _activeTab = tab;
+        errorMessage = null;
+        successMessage = null;
+        loginRequest = new();
+        registerRequest = new();
+    }
+
+    private async Task HandleLogin()
+    {
+        isLoading = true;
+        errorMessage = null;
+        StateHasChanged();
+
+        try
+        {
+            var success = await AuthService.LoginAsync(loginRequest);
+            if (success)
+            {
+                NavigationManager.NavigateTo("/");
+            }
+            else
+            {
+                errorMessage = "Invalid email or password. Please try again.";
+            }
+        }
+        catch (Exception ex)
+        {
+            errorMessage = $"Something went wrong: {ex.Message}";
+        }
+        finally
+        {
+            isLoading = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task HandleRegister()
+    {
+        isLoading = true;
+        errorMessage = null;
+        successMessage = null;
+        StateHasChanged();
+
+        try
+        {
+            var success = await AuthService.RegisterAsync(registerRequest);
+            if (success)
+            {
+                NavigationManager.NavigateTo("/");
+            }
+            else
+            {
+                errorMessage = "Could not create account. This email may already be registered.";
+            }
+        }
+        catch (Exception ex)
+        {
+            errorMessage = $"Something went wrong: {ex.Message}";
+        }
+        finally
+        {
+            isLoading = false;
+            StateHasChanged();
+        }
+    }
+}

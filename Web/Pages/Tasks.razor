@@ -1,0 +1,215 @@
+@using TaskStatus = StudyConnect.Web.Models.TaskStatus
+@page "/tasks"
+@attribute [Authorize]
+@inject ITaskService TaskService
+@inject IGroupService GroupService
+@inject IJSRuntime JSRuntime
+
+<PageTitle>My Tasks — StudyConnect</PageTitle>
+
+<div class="page-header">
+    <div class="page-header-left">
+        <h1 class="page-title">My Tasks</h1>
+        <p class="page-subtitle">Track and manage your assigned tasks across all groups</p>
+    </div>
+</div>
+
+<!-- Filter Tabs -->
+<div class="tab-nav mb-4">
+    <button class="@(_activeFilter == "all" ? "active" : "")" @onclick='() => SetFilter("all")'>
+        <i class="bi bi-list"></i> All
+        <span style="background:var(--surface-3);padding:1px 7px;border-radius:99px;font-size:0.7rem;">@tasks.Count</span>
+    </button>
+    <button class="@(_activeFilter == "pending" ? "active" : "")" @onclick='() => SetFilter("pending")'>
+        <i class="bi bi-hourglass-split"></i> Pending
+        <span style="background:var(--warning-light);color:#92400E;padding:1px 7px;border-radius:99px;font-size:0.7rem;">@tasks.Count(t => t.Status == "Pending")</span>
+    </button>
+    <button class="@(_activeFilter == "inprogress" ? "active" : "")" @onclick='() => SetFilter("inprogress")'>
+        <i class="bi bi-arrow-repeat"></i> In Progress
+        <span style="background:var(--info-light);color:var(--info);padding:1px 7px;border-radius:99px;font-size:0.7rem;">@tasks.Count(t => t.Status == "InProgress")</span>
+    </button>
+    <button class="@(_activeFilter == "completed" ? "active" : "")" @onclick='() => SetFilter("completed")'>
+        <i class="bi bi-check-circle"></i> Completed
+        <span style="background:var(--success-light);color:var(--success);padding:1px 7px;border-radius:99px;font-size:0.7rem;">@tasks.Count(t => t.Status == "Completed")</span>
+    </button>
+    <button class="@(_activeFilter == "overdue" ? "active" : "")" @onclick='() => SetFilter("overdue")'>
+        <i class="bi bi-exclamation-triangle"></i> Overdue
+        <span style="background:var(--danger-light);color:var(--danger);padding:1px 7px;border-radius:99px;font-size:0.7rem;">@tasks.Count(t => t.IsOverdue)</span>
+    </button>
+</div>
+
+@if (isLoading)
+{
+    <div class="loading-overlay">
+        <div class="spinner"></div>
+        <span>Loading tasks...</span>
+    </div>
+}
+else if (!FilteredTasks.Any())
+{
+    <div class="empty-state">
+        <div class="empty-state-icon"><i class="bi bi-check2-square"></i></div>
+        <h4>@GetEmptyTitle()</h4>
+        <p>@GetEmptyMessage()</p>
+    </div>
+}
+else
+{
+    <div>
+        @foreach (var task in FilteredTasks)
+        {
+            <div class="task-card priority-@task.Priority.ToLowerInvariant() @(task.Status == "Completed" ? "status-completed" : "")">
+                <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:12px;">
+                    <div style="flex:1; min-width:0;">
+                        <div style="display:flex; align-items:center; gap:8px; margin-bottom:5px; flex-wrap:wrap;">
+                            <h6 class="task-title">@task.Title</h6>
+                            <span class="badge-priority @task.Priority.ToLowerInvariant()">@task.Priority</span>
+                            <span class="badge @GetStatusBadgeClass(task.Status)">@GetStatusLabel(task.Status)</span>
+                            @if (task.IsOverdue)
+                            {
+                                <span class="badge badge-danger">
+                                    <i class="bi bi-exclamation-triangle-fill me-1"></i>Overdue
+                                </span>
+                            }
+                        </div>
+                        @if (!string.IsNullOrEmpty(task.Description))
+                        {
+                            <p style="margin:0 0 8px; font-size:0.825rem; color:var(--text-secondary);">@task.Description</p>
+                        }
+                        <div class="task-meta">
+                            @if (task.DueDate.HasValue)
+                            {
+                                <span style="color:@(task.IsOverdue ? "var(--danger)" : "inherit");">
+                                    <i class="bi bi-calendar"></i>
+                                    Due @task.DueDate.Value.ToString("MMM dd, yyyy")
+                                </span>
+                            }
+                            <span>
+                                <i class="bi bi-person-plus"></i>
+                                Created by @task.CreatedBy.Name
+                            </span>
+                        </div>
+                    </div>
+                    <div style="display:flex; gap:6px; flex-shrink:0;">
+                        @if (task.Status != "Completed")
+                        {
+                            <button class="btn btn-sm btn-secondary" style="color:var(--success); border-color:var(--success);"
+                                    @onclick="() => MarkComplete(task)" title="Mark as complete">
+                                <i class="bi bi-check-lg"></i>
+                                Done
+                            </button>
+                        }
+                    </div>
+                </div>
+            </div>
+        }
+    </div>
+}
+
+@if (!string.IsNullOrEmpty(errorMessage))
+{
+    <div class="alert alert-danger mt-3">
+        <i class="bi bi-exclamation-circle-fill"></i>
+        @errorMessage
+    </div>
+}
+
+@code {
+    private List<GroupTaskDto> tasks = new();
+    private bool isLoading = true;
+    private string _activeFilter = "all";
+    private string? errorMessage;
+
+    private IEnumerable<GroupTaskDto> FilteredTasks => _activeFilter switch
+    {
+        "pending"    => tasks.Where(t => t.Status == "Pending"),
+        "inprogress" => tasks.Where(t => t.Status == "InProgress"),
+        "completed"  => tasks.Where(t => t.Status == "Completed"),
+        "overdue"    => tasks.Where(t => t.IsOverdue),
+        _            => tasks
+    };
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadTasks();
+    }
+
+    private async Task LoadTasks()
+    {
+        isLoading = true;
+        errorMessage = null;
+        tasks = await TaskService.GetMyTasksAsync();
+        isLoading = false;
+    }
+
+    private void SetFilter(string filter)
+    {
+        _activeFilter = filter;
+    }
+
+    private async Task MarkComplete(GroupTaskDto task)
+    {
+        errorMessage = null;
+        var update = new UpdateTaskRequest
+        {
+            Title = task.Title,
+            Description = task.Description,
+            Status = TaskStatus.Completed,
+            Priority = Enum.Parse<TaskPriority>(task.Priority),
+            DueDate = task.DueDate
+        };
+
+        var groups = await GroupService.GetMyGroupsAsync();
+        foreach (var group in groups)
+        {
+            var groupTasks = await TaskService.GetGroupTasksAsync(group.Id);
+            if (groupTasks.Any(t => t.Id == task.Id))
+            {
+                var result = await TaskService.UpdateTaskAsync(task.Id, group.Id, update);
+                if (result != null)
+                {
+                    await LoadTasks();
+                }
+                else
+                {
+                    errorMessage = "Failed to update task. Please try again.";
+                }
+                return;
+            }
+        }
+    }
+
+    private static string GetStatusBadgeClass(string status) => status switch
+    {
+        "Pending"    => "badge-warning",
+        "InProgress" => "badge-info",
+        "Completed"  => "badge-success",
+        _            => "badge-secondary"
+    };
+
+    private static string GetStatusLabel(string status) => status switch
+    {
+        "Pending"    => "Pending",
+        "InProgress" => "In Progress",
+        "Completed"  => "Completed",
+        _            => status
+    };
+
+    private string GetEmptyTitle() => _activeFilter switch
+    {
+        "pending"    => "No Pending Tasks",
+        "inprogress" => "Nothing In Progress",
+        "completed"  => "No Completed Tasks",
+        "overdue"    => "No Overdue Tasks",
+        _            => "No Tasks Found"
+    };
+
+    private string GetEmptyMessage() => _activeFilter switch
+    {
+        "pending"    => "You're all caught up! No pending tasks right now.",
+        "inprogress" => "No tasks are currently in progress.",
+        "completed"  => "You haven't completed any tasks yet.",
+        "overdue"    => "Great job! No overdue tasks.",
+        _            => "Tasks assigned to you across your groups will appear here."
+    };
+}

@@ -1,0 +1,368 @@
+@page "/video-call/{SessionId}"
+@using Microsoft.AspNetCore.Components.Authorization
+@using StudyConnect.Web.Services
+@attribute [Authorize]
+@inject ISessionService SessionService
+@inject IJSRuntime JSRuntime
+@inject NavigationManager NavigationManager
+@inject AuthenticationStateProvider AuthStateProvider
+
+<PageTitle>Video Call — StudyConnect</PageTitle>
+
+<div class="video-call-container">
+    @if (isLoading)
+    {
+        <div class="video-loading">
+            <div class="spinner"></div>
+            <span>Loading video call...</span>
+        </div>
+    }
+    else if (session == null)
+    {
+        <div class="video-error">
+            <i class="bi bi-exclamation-circle-fill"></i>
+            <h4>Session Not Found</h4>
+            <p>The session you're trying to join doesn't exist or you don't have access.</p>
+            <a href="/sessions" class="btn btn-primary">Back to Sessions</a>
+        </div>
+    }
+    else if (!session.IsActive && DateTime.UtcNow < session.ScheduledAt)
+    {
+        <div class="video-waiting">
+            <div class="waiting-card">
+                <i class="bi bi-clock-history"></i>
+                <h4>Session Not Started Yet</h4>
+                <p>@session.Title</p>
+                <div class="session-time">
+                    Starts at: <strong>@session.ScheduledAt.ToLocalTime().ToString("g")</strong>
+                </div>
+                <div class="waiting-info">
+                    <p>Come back when the session starts to join the video call.</p>
+                </div>
+                <a href="/sessions" class="btn btn-secondary">Back to Sessions</a>
+            </div>
+        </div>
+    }
+    else if (session.IsActive)
+    {
+        <div class="video-header">
+            <div class="video-header-left">
+                <h2>@session.Title</h2>
+                <p class="video-subtitle">Group Study Session</p>
+            </div>
+            <div class="video-header-right">
+                <button class="btn-icon-sm" @onclick="LeaveCall" title="Leave Call">
+                    <i class="bi bi-x-lg"></i>
+                </button>
+            </div>
+        </div>
+
+        <div id="jitsi-container" class="jitsi-container"></div>
+    }
+    else
+    {
+        <div class="video-ended">
+            <div class="ended-card">
+                <i class="bi bi-check-circle-fill"></i>
+                <h4>Session Ended</h4>
+                <p>@session.Title</p>
+                <p class="text-muted fs-sm">This session ended on @session.ScheduledAt.AddMinutes(session.DurationMinutes).ToLocalTime().ToString("g")</p>
+                <a href="/sessions" class="btn btn-primary">Back to Sessions</a>
+            </div>
+        </div>
+    }
+</div>
+
+@code {
+    [Parameter]
+    public string SessionId { get; set; } = string.Empty;
+
+    private Models.SessionDto? session;
+    private bool isLoading = true;
+    private string? userName;
+    private string? userEmail;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            if (!Guid.TryParse(SessionId, out var sessionId))
+            {
+                NavigationManager.NavigateTo("/sessions");
+                return;
+            }
+
+            // Get session details
+            session = await SessionService.GetSessionByIdAsync(sessionId);
+            
+            if (session == null)
+            {
+                isLoading = false;
+                return;
+            }
+
+            // Get user info from auth state
+            var authState = await AuthStateProvider.GetAuthenticationStateAsync();
+            if (authState.User.Identity?.IsAuthenticated == true)
+            {
+                userName = authState.User.FindFirst(System.Security.Claims.ClaimTypes.Name)?.Value ?? "User";
+                userEmail = authState.User.FindFirst(System.Security.Claims.ClaimTypes.Email)?.Value ?? "";
+            }
+
+            isLoading = false;
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error loading session: {ex.Message}");
+            isLoading = false;
+        }
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender && session?.IsActive == true && session.RoomName != null)
+        {
+            try
+            {
+                // Load and initialize Jitsi
+                await InitializeJitsi();
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Error initializing Jitsi: {ex.Message}");
+            }
+        }
+    }
+
+    private async Task InitializeJitsi()
+    {
+        // Load Jitsi IFrame API
+        await JSRuntime.InvokeVoidAsync("eval", 
+            """
+            (function() {
+                const script = document.createElement('script');
+                script.src = 'https://meet.jit.si/external_api.js';
+                script.async = true;
+                document.head.appendChild(script);
+            })();
+            """);
+
+        // Wait a moment for the API to load
+        await Task.Delay(500);
+
+        // Initialize the meeting
+        if (!string.IsNullOrEmpty(session?.RoomName))
+        {
+            var options = new
+            {
+                roomName = session.RoomName,
+                width = "100%",
+                height = "100%",
+                parentNode = "jitsi-container",
+                userInfo = new
+                {
+                    email = userEmail ?? "",
+                    displayName = userName ?? "User"
+                },
+                configOverwrite = new
+                {
+                    disableSimulcast = false,
+                    enableLayerSuspension = true,
+                    startScreenSharing = false,
+                    startWithVideoMuted = false,
+                    startWithAudioMuted = false,
+                    enableWelcomePage = true,
+                    prejoinPageEnabled = false
+                },
+                interfaceConfigOverwrite = new
+                {
+                    SHOW_CHROME_EXTENSION_BANNER = false,
+                    MOBILE_APP_PROMO = false,
+                    TOOLBAR_BUTTONS = new object[] {
+                        "microphone",
+                        "camera",
+                        "desktop",
+                        "fullscreen",
+                        "fodeviceselection",
+                        "hangup",
+                        "chat",
+                        "settings",
+                        "raisehand",
+                        "videoquality",
+                        "filmstrip",
+                        "feedback",
+                        "stats",
+                        "shortcuts",
+                        "tileview",
+                        "toggle-camera",
+                        "download-transcript"
+                    }
+                }
+            };
+
+            try
+            {
+                await JSRuntime.InvokeVoidAsync("initializeJitsiMeeting", options);
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Error calling Jitsi: {ex.Message}");
+            }
+        }
+    }
+
+    private async Task LeaveCall()
+    {
+        try
+        {
+            // Clean up Jitsi API
+            await JSRuntime.InvokeVoidAsync("disposeJitsiMeeting");
+        }
+        catch { }
+
+        NavigationManager.NavigateTo("/sessions");
+    }
+}
+
+<style>
+.video-call-container {
+    height: 100vh;
+    display: flex;
+    flex-direction: column;
+    background: #000;
+    color: white;
+}
+
+.video-loading,
+.video-error,
+.video-waiting,
+.video-ended {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+}
+
+.video-loading {
+    flex-direction: column;
+    gap: 20px;
+}
+
+.video-error,
+.video-waiting,
+.video-ended {
+    background: linear-gradient(135deg, #0F172A 0%, #1e293b 100%);
+}
+
+.video-error .spinner,
+.video-loading .spinner {
+    width: 60px;
+    height: 60px;
+    border: 4px solid rgba(255, 255, 255, 0.2);
+    border-top: 4px solid #2563EB;
+    border-radius: 50%;
+    animation: spin 1s linear infinite;
+}
+
+@@keyframes spin {
+    0% { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
+}
+
+.waiting-card,
+.ended-card {
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 12px;
+    padding: 40px;
+    text-align: center;
+    backdrop-filter: blur(10px);
+    max-width: 400px;
+}
+
+.waiting-card i,
+.ended-card i {
+    font-size: 64px;
+    color: #14B8A6;
+    margin-bottom: 20px;
+}
+
+.video-error i {
+    font-size: 64px;
+    color: #EF4444;
+    margin-bottom: 20px;
+}
+
+.waiting-card h4,
+.ended-card h4 {
+    font-size: 1.5rem;
+    margin-bottom: 10px;
+}
+
+.waiting-card p,
+.ended-card p {
+    margin: 10px 0;
+    font-size: 1rem;
+}
+
+.session-time {
+    background: rgba(37, 99, 235, 0.1);
+    border: 1px solid rgba(37, 99, 235, 0.3);
+    border-radius: 8px;
+    padding: 12px;
+    margin: 20px 0;
+    font-size: 0.95rem;
+}
+
+.waiting-info {
+    margin-top: 20px;
+    color: rgba(255, 255, 255, 0.7);
+}
+
+.video-header {
+    background: rgba(0, 0, 0, 0.6);
+    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+    padding: 16px 20px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    backdrop-filter: blur(10px);
+}
+
+.video-header-left h2 {
+    margin: 0;
+    font-size: 1.3rem;
+}
+
+.video-subtitle {
+    margin: 4px 0 0 0;
+    font-size: 0.85rem;
+    opacity: 0.7;
+}
+
+.btn-icon-sm {
+    background: rgba(239, 68, 68, 0.2);
+    border: 1px solid rgba(239, 68, 68, 0.4);
+    color: #EF4444;
+    border-radius: 8px;
+    width: 40px;
+    height: 40px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.btn-icon-sm:hover {
+    background: rgba(239, 68, 68, 0.3);
+    transform: scale(1.05);
+}
+
+.jitsi-container {
+    flex: 1;
+    width: 100%;
+    background: #000;
+}
+</style>

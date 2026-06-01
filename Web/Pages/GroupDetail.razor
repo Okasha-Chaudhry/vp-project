@@ -1,0 +1,696 @@
+@using TaskStatus = StudyConnect.Web.Models.TaskStatus
+@page "/groups/{GroupId:guid}"
+@attribute [Authorize]
+@inject IGroupService GroupService
+@inject IResourceService ResourceService
+@inject ISessionService SessionService
+@inject ITaskService TaskService
+@inject NavigationManager NavigationManager
+@inject IJSRuntime JSRuntime
+
+<PageTitle>@(!string.IsNullOrEmpty(group?.Name) ? $"{group.Name} — StudyConnect" : "Group — StudyConnect")</PageTitle>
+
+@if (isLoading)
+{
+    <div class="loading-overlay">
+        <div class="spinner"></div>
+        <span>Loading group...</span>
+    </div>
+}
+else if (group == null)
+{
+    <div class="empty-state">
+        <div class="empty-state-icon"><i class="bi bi-exclamation-circle"></i></div>
+        <h4>Group Not Found</h4>
+        <p>This group does not exist or you don't have access to it.</p>
+        <div class="empty-state-actions">
+            <button class="btn btn-primary" @onclick="BackToGroups">
+                <i class="bi bi-arrow-left"></i> Back to Groups
+            </button>
+        </div>
+    </div>
+}
+else
+{
+    <!-- Page Header -->
+    <div class="page-header">
+        <div class="page-header-left">
+            <div style="display:flex; align-items:center; gap:10px; margin-bottom:6px;">
+                <button class="btn-icon" @onclick="BackToGroups" title="Back to groups">
+                    <i class="bi bi-arrow-left"></i>
+                </button>
+                <h1 class="page-title" style="margin:0;">@group.Name</h1>
+            </div>
+            <p class="page-subtitle" style="margin-left:46px;">
+                @(string.IsNullOrEmpty(group.Description) ? "No description provided." : group.Description)
+            </p>
+        </div>
+        <div class="page-actions">
+            <div style="display:flex; flex-direction:column; align-items:flex-end; gap:4px;">
+                <span class="fs-xs text-muted">Invite Code</span>
+                <span class="invite-code" @onclick="CopyInviteCode" title="Click to copy">
+                    @group.InviteCode &nbsp;<i class="bi bi-clipboard"></i>
+                </span>
+            </div>
+            <button class="btn btn-secondary" style="color:var(--danger); border-color:var(--danger);" @onclick="LeaveGroup">
+                <i class="bi bi-box-arrow-left"></i>
+                Leave
+            </button>
+        </div>
+    </div>
+
+    @if (!string.IsNullOrEmpty(successMessage))
+    {
+        <div class="alert alert-success mb-3">
+            <i class="bi bi-check-circle-fill"></i> @successMessage
+        </div>
+    }
+    @if (!string.IsNullOrEmpty(errorMessage))
+    {
+        <div class="alert alert-danger mb-3">
+            <i class="bi bi-exclamation-circle-fill"></i> @errorMessage
+        </div>
+    }
+
+    <!-- Tabs -->
+    <div class="tab-nav mb-4">
+        <button class="@(_activeTab == "resources" ? "active" : "")" @onclick='() => _activeTab = "resources"'>
+            <i class="bi bi-folder"></i> Resources
+            <span style="background:var(--surface-3);padding:1px 7px;border-radius:99px;font-size:0.7rem;">@group.Resources.Count</span>
+        </button>
+        <button class="@(_activeTab == "sessions" ? "active" : "")" @onclick='() => _activeTab = "sessions"'>
+            <i class="bi bi-calendar-event"></i> Sessions
+            <span style="background:var(--surface-3);padding:1px 7px;border-radius:99px;font-size:0.7rem;">@group.Sessions.Count</span>
+        </button>
+        <button class="@(_activeTab == "tasks" ? "active" : "")" @onclick='() => _activeTab = "tasks"'>
+            <i class="bi bi-check2-square"></i> Tasks
+            <span style="background:var(--surface-3);padding:1px 7px;border-radius:99px;font-size:0.7rem;">@group.Tasks.Count</span>
+        </button>
+        <button class="@(_activeTab == "members" ? "active" : "")" @onclick='() => _activeTab = "members"'>
+            <i class="bi bi-people"></i> Members
+            <span style="background:var(--surface-3);padding:1px 7px;border-radius:99px;font-size:0.7rem;">@group.Members.Count</span>
+        </button>
+    </div>
+
+    <!-- ── Resources Tab ─────────────────────────────────── -->
+    @if (_activeTab == "resources")
+    {
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px;">
+            <div class="section-title" style="margin:0; flex:1;">Shared Resources</div>
+            <button class="btn btn-primary btn-sm" @onclick="ShowAddResourceModal">
+                <i class="bi bi-plus-lg"></i> Add Resource
+            </button>
+        </div>
+
+        @if (group.Resources.Count == 0)
+        {
+            <div class="empty-state">
+                <div class="empty-state-icon"><i class="bi bi-folder2-open"></i></div>
+                <h4>No Resources Yet</h4>
+                <p>Share notes, PDFs, videos, or links with your study group.</p>
+                <div class="empty-state-actions">
+                    <button class="btn btn-primary" @onclick="ShowAddResourceModal">
+                        <i class="bi bi-plus-lg"></i> Add First Resource
+                    </button>
+                </div>
+            </div>
+        }
+        else
+        {
+            @foreach (var resource in group.Resources)
+            {
+                <div class="resource-card">
+                    <div class="resource-icon @GetResourceIconClass(resource.Type)">
+                        <i class="bi @GetResourceIcon(resource.Type)"></i>
+                    </div>
+                    <div style="flex:1; min-width:0;">
+                        <h6 style="margin:0 0 3px; font-size:0.875rem; font-weight:600; color:var(--text-primary);">@resource.Title</h6>
+                        @if (!string.IsNullOrEmpty(resource.Description))
+                        {
+                            <p style="margin:0 0 4px; font-size:0.8rem; color:var(--text-secondary);">@resource.Description</p>
+                        }
+                        <span class="fs-xs text-muted">
+                            By @resource.UploadedBy.Name &middot; @resource.UploadedAt.ToString("MMM dd, yyyy")
+                        </span>
+                    </div>
+                    <div style="display:flex; gap:6px; flex-shrink:0;">
+                        <button class="btn btn-sm btn-secondary" @onclick="() => OpenResource(resource.Content)" title="Open resource">
+                            <i class="bi bi-box-arrow-up-right"></i>
+                        </button>
+                        <button class="btn btn-sm btn-secondary" style="color:var(--danger);"
+                                @onclick="() => DeleteResource(resource.Id)" title="Delete resource">
+                            <i class="bi bi-trash"></i>
+                        </button>
+                    </div>
+                </div>
+            }
+        }
+    }
+
+    <!-- ── Sessions Tab ──────────────────────────────────── -->
+    @if (_activeTab == "sessions")
+    {
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px;">
+            <div class="section-title" style="margin:0; flex:1;">Study Sessions</div>
+            <button class="btn btn-primary btn-sm" @onclick="ShowAddSessionModal">
+                <i class="bi bi-plus-lg"></i> Schedule Session
+            </button>
+        </div>
+
+        @if (group.Sessions.Count == 0)
+        {
+            <div class="empty-state">
+                <div class="empty-state-icon"><i class="bi bi-calendar-event"></i></div>
+                <h4>No Sessions Scheduled</h4>
+                <p>Plan your next group study session and invite members to join.</p>
+                <div class="empty-state-actions">
+                    <button class="btn btn-primary" @onclick="ShowAddSessionModal">
+                        <i class="bi bi-plus-lg"></i> Schedule First Session
+                    </button>
+                </div>
+            </div>
+        }
+        else
+        {
+            @foreach (var session in group.Sessions.OrderBy(s => s.ScheduledAt))
+            {
+                <div class="session-card @(session.IsUpcoming ? "upcoming" : "past") mb-2">
+                    <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:12px;">
+                        <div style="flex:1; min-width:0;">
+                            <div style="display:flex; align-items:center; gap:8px; margin-bottom:4px; flex-wrap:wrap;">
+                                <h6 style="margin:0; font-size:0.875rem; font-weight:600; color:var(--text-primary);">
+                                    @session.Title
+                                </h6>
+                                @if (session.IsUpcoming)
+                                {
+                                    <span class="badge badge-primary">Upcoming</span>
+                                }
+                                else
+                                {
+                                    <span class="badge badge-secondary">Past</span>
+                                }
+                            </div>
+                            @if (!string.IsNullOrEmpty(session.Description))
+                            {
+                                <p style="margin:0 0 6px; font-size:0.8rem; color:var(--text-secondary);">@session.Description</p>
+                            }
+                            <div style="display:flex; flex-wrap:wrap; gap:12px; font-size:0.775rem; color:var(--text-secondary);">
+                                <span><i class="bi bi-calendar me-1"></i>@session.ScheduledAt.ToString("MMM dd, yyyy HH:mm")</span>
+                                <span><i class="bi bi-clock me-1"></i>@session.DurationMinutes min</span>
+                                <span><i class="bi bi-person me-1"></i>@session.CreatedBy.Name</span>
+                            </div>
+                        </div>
+                        <div style="display:flex; gap:6px; flex-shrink:0;">
+                            @if (!string.IsNullOrEmpty(session.MeetingLink))
+                            {
+                                <button class="btn btn-primary btn-sm" @onclick="() => OpenResource(session.MeetingLink!)">
+                                    <i class="bi bi-camera-video-fill"></i> Join
+                                </button>
+                            }
+                            <button class="btn btn-sm btn-secondary" style="color:var(--danger);"
+                                    @onclick="() => DeleteSession(session.Id)" title="Delete">
+                                <i class="bi bi-trash"></i>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            }
+        }
+    }
+
+    <!-- ── Tasks Tab ─────────────────────────────────────── -->
+    @if (_activeTab == "tasks")
+    {
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px;">
+            <div class="section-title" style="margin:0; flex:1;">Group Tasks</div>
+            <button class="btn btn-primary btn-sm" @onclick="ShowAddTaskModal">
+                <i class="bi bi-plus-lg"></i> Add Task
+            </button>
+        </div>
+
+        @if (group.Tasks.Count == 0)
+        {
+            <div class="empty-state">
+                <div class="empty-state-icon"><i class="bi bi-check2-square"></i></div>
+                <h4>No Tasks Yet</h4>
+                <p>Create and assign tasks to keep your group organized and on track.</p>
+                <div class="empty-state-actions">
+                    <button class="btn btn-primary" @onclick="ShowAddTaskModal">
+                        <i class="bi bi-plus-lg"></i> Create First Task
+                    </button>
+                </div>
+            </div>
+        }
+        else
+        {
+            @foreach (var task in group.Tasks.OrderBy(t => t.Status == "Completed").ThenByDescending(t => t.CreatedAt))
+            {
+                <div class="task-card priority-@task.Priority.ToLowerInvariant() @(task.Status == "Completed" ? "status-completed" : "")">
+                    <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:12px;">
+                        <div style="flex:1; min-width:0;">
+                            <div style="display:flex; align-items:center; gap:8px; margin-bottom:5px; flex-wrap:wrap;">
+                                <h6 class="task-title">@task.Title</h6>
+                                <span class="badge-priority @task.Priority.ToLowerInvariant()">@task.Priority</span>
+                                <span class="badge @GetStatusBadgeClass(task.Status)">@GetStatusLabel(task.Status)</span>
+                                @if (task.IsOverdue)
+                                {
+                                    <span class="badge badge-danger">Overdue</span>
+                                }
+                            </div>
+                            @if (!string.IsNullOrEmpty(task.Description))
+                            {
+                                <p style="margin:0 0 6px; font-size:0.8rem; color:var(--text-secondary);">@task.Description</p>
+                            }
+                            <div class="task-meta">
+                                @if (task.DueDate.HasValue)
+                                {
+                                    <span style="color:@(task.IsOverdue ? "var(--danger)" : "inherit");">
+                                        <i class="bi bi-calendar"></i> Due @task.DueDate.Value.ToString("MMM dd, yyyy")
+                                    </span>
+                                }
+                                @if (task.AssignedTo != null)
+                                {
+                                    <span><i class="bi bi-person"></i> @task.AssignedTo.Name</span>
+                                }
+                                <span><i class="bi bi-person-plus"></i> @task.CreatedBy.Name</span>
+                            </div>
+                        </div>
+                        <div style="display:flex; gap:6px; flex-shrink:0;">
+                            @if (task.Status != "Completed")
+                            {
+                                <button class="btn btn-sm btn-secondary" style="color:var(--success); border-color:var(--success);"
+                                        @onclick="() => MarkTaskComplete(task)" title="Mark complete">
+                                    <i class="bi bi-check-lg"></i>
+                                </button>
+                            }
+                            <button class="btn btn-sm btn-secondary" style="color:var(--danger);"
+                                    @onclick="() => DeleteTask(task.Id)" title="Delete">
+                                <i class="bi bi-trash"></i>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            }
+        }
+    }
+
+    <!-- ── Members Tab ───────────────────────────────────── -->
+    @if (_activeTab == "members")
+    {
+        <div class="section-title mb-3">Members (@group.Members.Count)</div>
+        <div style="display:grid; grid-template-columns:repeat(auto-fill, minmax(240px, 1fr)); gap:12px;">
+            @foreach (var member in group.Members)
+            {
+                <div class="card">
+                    <div class="card-body" style="display:flex; align-items:center; gap:12px;">
+                        <div class="sidebar-avatar" style="width:44px;height:44px;font-size:1rem;flex-shrink:0;">
+                            @(string.IsNullOrEmpty(member.User.Name) ? '?' : char.ToUpper(member.User.Name[0]))
+                        </div>
+                        <div style="min-width:0; flex:1;">
+                            <div style="font-size:0.875rem; font-weight:600; color:var(--text-primary); white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">
+                                @member.User.Name
+                            </div>
+                            <div style="font-size:0.75rem; color:var(--text-secondary); white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">
+                                @member.User.Email
+                            </div>
+                            <div style="margin-top:4px; display:flex; align-items:center; gap:6px;">
+                                <span class="group-role-badge @(member.Role == "Admin" ? "admin" : "member")">
+                                    @member.Role
+                                </span>
+                                <span class="fs-xs text-muted">@member.JoinedAt.ToString("MMM yyyy")</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            }
+        </div>
+    }
+}
+
+<!-- ── Add Resource Modal ──────────────────────────────── -->
+@if (showAddResourceModal)
+{
+    <div class="modal-overlay" @onclick="CloseModals">
+        <div class="modal-card" @onclick:stopPropagation>
+            <div class="modal-header">
+                <h5><i class="bi bi-folder-plus me-2" style="color:var(--primary);"></i>Add Resource</h5>
+                <button class="modal-close-btn" @onclick="CloseModals"><i class="bi bi-x-lg"></i></button>
+            </div>
+            <EditForm Model="resourceRequest" OnValidSubmit="HandleAddResource">
+                <DataAnnotationsValidator />
+                <div class="modal-body">
+                    <div class="form-group">
+                        <label class="form-label">Title <span class="required-star">*</span></label>
+                        <InputText @bind-Value="resourceRequest.Title" class="form-control" placeholder="Resource title" />
+                        <ValidationMessage For="@(() => resourceRequest.Title)" class="validation-message" />
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Type <span class="required-star">*</span></label>
+                        <InputSelect @bind-Value="resourceRequest.Type" class="form-control">
+                            @foreach (var type in Enum.GetValues<ResourceType>())
+                            {
+                                <option value="@type">@type</option>
+                            }
+                        </InputSelect>
+                        <ValidationMessage For="@(() => resourceRequest.Type)" class="validation-message" />
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Content <span class="required-star">*</span></label>
+                        <InputTextArea @bind-Value="resourceRequest.Content" class="form-control" rows="3"
+                                       placeholder="Paste URL, note content, or embed code..." />
+                        <ValidationMessage For="@(() => resourceRequest.Content)" class="validation-message" />
+                        <span class="form-text">For links, paste the full URL. For notes, type your content.</span>
+                    </div>
+                    <div class="form-group mb-0">
+                        <label class="form-label">Description</label>
+                        <InputTextArea @bind-Value="resourceRequest.Description" class="form-control" rows="2"
+                                       placeholder="Optional description..." />
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" @onclick="CloseModals">Cancel</button>
+                    <button type="submit" class="btn btn-primary" disabled="@isSubmitting">
+                        @if (isSubmitting) { <span class="spinner spinner-sm"></span> }
+                        Add Resource
+                    </button>
+                </div>
+            </EditForm>
+        </div>
+    </div>
+}
+
+<!-- ── Add Session Modal ───────────────────────────────── -->
+@if (showAddSessionModal)
+{
+    <div class="modal-overlay" @onclick="CloseModals">
+        <div class="modal-card" @onclick:stopPropagation>
+            <div class="modal-header">
+                <h5><i class="bi bi-camera-video-fill me-2" style="color:var(--primary);"></i>Schedule Study Session</h5>
+                <button class="modal-close-btn" @onclick="CloseModals"><i class="bi bi-x-lg"></i></button>
+            </div>
+            <EditForm Model="sessionRequest" OnValidSubmit="HandleAddSession">
+                <DataAnnotationsValidator />
+                <div class="modal-body">
+                    <div class="form-group">
+                        <label class="form-label">Title <span class="required-star">*</span></label>
+                        <InputText @bind-Value="sessionRequest.Title" class="form-control"
+                                   placeholder="e.g., Week 5 Review Session" />
+                        <ValidationMessage For="@(() => sessionRequest.Title)" class="validation-message" />
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Date & Time <span class="required-star">*</span></label>
+                        <div style="display:flex; gap:8px; margin-bottom:8px; flex-wrap:wrap;">
+                            <button type="button" class="btn btn-outline-primary btn-sm" @onclick="() => SetScheduledAt(DateTime.Now)">
+                                <i class="bi bi-play-circle"></i> Now
+                            </button>
+                            <button type="button" class="btn btn-outline-primary btn-sm" @onclick="() => SetScheduledAt(DateTime.Now.AddMinutes(5))">
+                                <i class="bi bi-clock"></i> +5 min
+                            </button>
+                            <button type="button" class="btn btn-outline-primary btn-sm" @onclick="() => SetScheduledAt(DateTime.Now.AddMinutes(15))">
+                                <i class="bi bi-clock"></i> +15 min
+                            </button>
+                            <button type="button" class="btn btn-outline-primary btn-sm" @onclick="() => SetScheduledAt(DateTime.Now.AddHours(1))">
+                                <i class="bi bi-clock"></i> +1 hour
+                            </button>
+                        </div>
+                        <InputDate Type="InputDateType.DateTimeLocal" @bind-Value="sessionRequest.ScheduledAt" class="form-control" />
+                        <ValidationMessage For="@(() => sessionRequest.ScheduledAt)" class="validation-message" />
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Duration (minutes) <span class="required-star">*</span></label>
+                        <InputNumber @bind-Value="sessionRequest.DurationMinutes" class="form-control" min="15" max="480" />
+                        <ValidationMessage For="@(() => sessionRequest.DurationMinutes)" class="validation-message" />
+                    </div>
+                    <div class="form-group mb-0">
+                        <label class="form-label">Description</label>
+                        <InputTextArea @bind-Value="sessionRequest.Description" class="form-control" rows="2"
+                                       placeholder="What will this session cover?" />
+                    </div>
+                    
+                    <!-- Video Call Options -->
+                    <div style="background:rgba(37, 99, 235, 0.08); border:1px solid rgba(37, 99, 235, 0.2); border-radius:8px; padding:12px; margin-top:16px;">
+                        <div style="display:flex; align-items:center; gap:8px; margin-bottom:8px;">
+                            <i class="bi bi-camera-video-fill" style="color:var(--primary); font-size:1rem;"></i>
+                            <span style="font-weight:600; color:var(--text-primary);">Video Call</span>
+                        </div>
+                        <div style="display:flex; align-items:center; gap:8px;">
+                            <InputCheckbox @bind-Value="sessionRequest.UseBuiltInVideoCall" id="useBuiltInVideo" />
+                            <label for="useBuiltInVideo" style="margin:0; cursor:pointer; color:var(--text-secondary);">
+                                Use built-in video conferencing (Jitsi Meet) <span style="color:var(--success); font-weight:600;">✓ Recommended</span>
+                            </label>
+                        </div>
+                        <p style="margin:8px 0 0; font-size:0.75rem; color:var(--text-tertiary); padding-left:24px;">
+                            Built-in video includes screen sharing, recording, and chat features.
+                        </p>
+                    </div>
+                    
+                    <!-- Alternative Meeting Link -->
+                    @if (!sessionRequest.UseBuiltInVideoCall)
+                    {
+                        <div class="form-group mt-3">
+                            <label class="form-label">External Meeting Link</label>
+                            <InputText @bind-Value="sessionRequest.MeetingLink" class="form-control"
+                                       placeholder="https://zoom.us/... or Google Meet link" />
+                            <ValidationMessage For="@(() => sessionRequest.MeetingLink)" class="validation-message" />
+                            <small style="color:var(--text-tertiary);">Only used if built-in video is disabled</small>
+                        </div>
+                    }
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" @onclick="CloseModals">Cancel</button>
+                    <button type="submit" class="btn btn-primary" disabled="@isSubmitting">
+                        @if (isSubmitting) { <span class="spinner spinner-sm"></span> }
+                        Schedule Session
+                    </button>
+                </div>
+            </EditForm>
+        </div>
+    </div>
+}
+
+<!-- ── Add Task Modal ─────────────────────────────────── -->
+@if (showAddTaskModal)
+{
+    <div class="modal-overlay" @onclick="CloseModals">
+        <div class="modal-card" @onclick:stopPropagation>
+            <div class="modal-header">
+                <h5><i class="bi bi-plus-square me-2" style="color:var(--success);"></i>Add Task</h5>
+                <button class="modal-close-btn" @onclick="CloseModals"><i class="bi bi-x-lg"></i></button>
+            </div>
+            <EditForm Model="taskRequest" OnValidSubmit="HandleAddTask">
+                <DataAnnotationsValidator />
+                <div class="modal-body">
+                    <div class="form-group">
+                        <label class="form-label">Title <span class="required-star">*</span></label>
+                        <InputText @bind-Value="taskRequest.Title" class="form-control" placeholder="Task title" />
+                        <ValidationMessage For="@(() => taskRequest.Title)" class="validation-message" />
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Priority <span class="required-star">*</span></label>
+                        <InputSelect @bind-Value="taskRequest.Priority" class="form-control">
+                            @foreach (var priority in Enum.GetValues<TaskPriority>())
+                            {
+                                <option value="@priority">@priority</option>
+                            }
+                        </InputSelect>
+                        <ValidationMessage For="@(() => taskRequest.Priority)" class="validation-message" />
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Due Date</label>
+                        <InputDate Type="InputDateType.Date" @bind-Value="taskRequest.DueDate" class="form-control" />
+                    </div>
+                    <div class="form-group mb-0">
+                        <label class="form-label">Description</label>
+                        <InputTextArea @bind-Value="taskRequest.Description" class="form-control" rows="2"
+                                       placeholder="Task details..." />
+                        <ValidationMessage For="@(() => taskRequest.Description)" class="validation-message" />
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" @onclick="CloseModals">Cancel</button>
+                    <button type="submit" class="btn btn-primary" disabled="@isSubmitting">
+                        @if (isSubmitting) { <span class="spinner spinner-sm"></span> }
+                        Add Task
+                    </button>
+                </div>
+            </EditForm>
+        </div>
+    </div>
+}
+
+@code {
+    [Parameter] public Guid GroupId { get; set; }
+
+    private GroupDetailDto? group;
+    private bool isLoading = true;
+    private string _activeTab = "resources";
+    private bool showAddResourceModal = false;
+    private bool showAddSessionModal = false;
+    private bool showAddTaskModal = false;
+    private bool isSubmitting = false;
+    private string? errorMessage;
+    private string? successMessage;
+
+    private CreateResourceRequest resourceRequest = new();
+    private CreateSessionRequest sessionRequest = new() { ScheduledAt = DateTime.Now.AddDays(1) };
+    private CreateTaskRequest taskRequest = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadGroup();
+    }
+
+    private async Task LoadGroup()
+    {
+        isLoading = true;
+        group = await GroupService.GetGroupDetailAsync(GroupId);
+        isLoading = false;
+    }
+
+    private async Task CopyInviteCode()
+    {
+        if (group != null)
+        {
+            await JSRuntime.InvokeVoidAsync("navigator.clipboard.writeText", group.InviteCode);
+            successMessage = "Invite code copied to clipboard!";
+            StateHasChanged();
+            await Task.Delay(2000);
+            successMessage = null;
+            StateHasChanged();
+        }
+    }
+
+    private async Task LeaveGroup()
+    {
+        var confirmed = await JSRuntime.InvokeAsync<bool>("confirm", "Are you sure you want to leave this group?");
+        if (confirmed)
+        {
+            await GroupService.LeaveGroupAsync(GroupId);
+            NavigationManager.NavigateTo("/groups");
+        }
+    }
+
+    private async Task OpenResource(string content)
+    {
+        if (content.StartsWith("http://") || content.StartsWith("https://"))
+            await JSRuntime.InvokeVoidAsync("open", content, "_blank");
+        else
+            await JSRuntime.InvokeVoidAsync("alert", content);
+    }
+
+    private async Task DeleteResource(Guid id)
+    {
+        var confirmed = await JSRuntime.InvokeAsync<bool>("confirm", "Delete this resource?");
+        if (confirmed)
+        {
+            await ResourceService.DeleteResourceAsync(id, GroupId);
+            await LoadGroup();
+        }
+    }
+
+    private async Task DeleteSession(Guid id)
+    {
+        var confirmed = await JSRuntime.InvokeAsync<bool>("confirm", "Delete this session?");
+        if (confirmed)
+        {
+            await SessionService.DeleteSessionAsync(id, GroupId);
+            await LoadGroup();
+        }
+    }
+
+    private async Task DeleteTask(Guid id)
+    {
+        var confirmed = await JSRuntime.InvokeAsync<bool>("confirm", "Delete this task?");
+        if (confirmed)
+        {
+            await TaskService.DeleteTaskAsync(id, GroupId);
+            await LoadGroup();
+        }
+    }
+
+    private async Task MarkTaskComplete(GroupTaskDto task)
+    {
+        var update = new UpdateTaskRequest
+        {
+            Title = task.Title,
+            Description = task.Description,
+            Status = TaskStatus.Completed,
+            Priority = Enum.Parse<TaskPriority>(task.Priority),
+            DueDate = task.DueDate
+        };
+        await TaskService.UpdateTaskAsync(task.Id, GroupId, update);
+        await LoadGroup();
+    }
+
+    private void ShowAddResourceModal() { resourceRequest = new(); showAddResourceModal = true; errorMessage = null; }
+    private void ShowAddSessionModal() { sessionRequest = new() { ScheduledAt = DateTime.Now.AddDays(1) }; showAddSessionModal = true; errorMessage = null; }
+    private void SetScheduledAt(DateTime dateTime) { sessionRequest.ScheduledAt = dateTime; StateHasChanged(); }
+    private void ShowAddTaskModal() { taskRequest = new(); showAddTaskModal = true; errorMessage = null; }
+    private void CloseModals() { showAddResourceModal = false; showAddSessionModal = false; showAddTaskModal = false; }
+
+    private async Task HandleAddResource()
+    {
+        isSubmitting = true;
+        errorMessage = null;
+        var result = await ResourceService.CreateResourceAsync(GroupId, resourceRequest);
+        if (result != null) { CloseModals(); await LoadGroup(); }
+        else errorMessage = "Failed to add resource. Please try again.";
+        isSubmitting = false;
+    }
+
+    private async Task HandleAddSession()
+    {
+        isSubmitting = true;
+        errorMessage = null;
+        var result = await SessionService.CreateSessionAsync(GroupId, sessionRequest);
+        if (result != null) { CloseModals(); await LoadGroup(); }
+        else errorMessage = "Failed to schedule session. Please try again.";
+        isSubmitting = false;
+    }
+
+    private async Task HandleAddTask()
+    {
+        isSubmitting = true;
+        errorMessage = null;
+        var result = await TaskService.CreateTaskAsync(GroupId, taskRequest);
+        if (result != null) { CloseModals(); await LoadGroup(); }
+        else errorMessage = "Failed to add task. Please try again.";
+        isSubmitting = false;
+    }
+
+    private static string GetResourceIcon(string type) => type.ToLower() switch
+    {
+        "note"  => "bi-sticky",
+        "pdf"   => "bi-file-earmark-pdf",
+        "video" => "bi-play-circle",
+        "link"  => "bi-link-45deg",
+        _       => "bi-file-earmark"
+    };
+
+    private static string GetResourceIconClass(string type) => type.ToLower() switch
+    {
+        "note"  => "note",
+        "pdf"   => "pdf",
+        "video" => "video",
+        "link"  => "link",
+        _       => ""
+    };
+
+    private static string GetStatusBadgeClass(string status) => status switch
+    {
+        "Pending"    => "badge-warning",
+        "InProgress" => "badge-info",
+        "Completed"  => "badge-success",
+        _            => "badge-secondary"
+    };
+
+    private static string GetStatusLabel(string status) => status switch
+    {
+        "Pending"    => "Pending",
+        "InProgress" => "In Progress",
+        "Completed"  => "Completed",
+        _            => status
+    };
+
+    private void BackToGroups() => NavigationManager.NavigateTo("/groups");
+}

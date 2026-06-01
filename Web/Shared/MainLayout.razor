@@ -1,0 +1,117 @@
+@using Microsoft.AspNetCore.Components.Authorization
+@inherits LayoutComponentBase
+@inject IAuthService AuthService
+@inject NavigationManager NavigationManager
+
+@if (isAuthenticated)
+{
+    <div class="page">
+        <!-- Sidebar -->
+        <div class="sidebar @(_sidebarCollapsed ? "collapsed" : "")">
+            <!-- Brand -->
+            <a href="/" class="sidebar-brand">
+                <div class="sidebar-brand-icon">
+                    <i class="bi bi-people-fill"></i>
+                </div>
+                <span class="sidebar-brand-text">StudyConnect</span>
+                <span class="sidebar-brand-badge">Beta</span>
+            </a>
+
+            <!-- Navigation -->
+            <NavMenu />
+
+            <!-- User Profile -->
+            <div class="sidebar-footer">
+                <div class="sidebar-user" title="@userEmail">
+                    <div class="sidebar-avatar">@userInitial</div>
+                    <div class="sidebar-user-info">
+                        <div class="sidebar-user-name">@userName</div>
+                        <div class="sidebar-user-email">@userEmail</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Main -->
+        <div class="main">
+            <!-- Top Bar -->
+            <div class="top-bar">
+                <div class="top-bar-left">
+                    <button class="btn-icon" @onclick="ToggleSidebar" title="Toggle sidebar" aria-label="Toggle sidebar">
+                        <i class="bi bi-list"></i>
+                    </button>
+                    <div class="top-bar-divider"></div>
+                    <span style="font-size:0.825rem; font-weight:500; color:var(--text-secondary);">
+                        @GetPageTitle()
+                    </span>
+                </div>
+                <div class="top-bar-right">
+                    <div class="d-flex align-items-center gap-2">
+                        <div class="topbar-avatar">@userInitial</div>
+                        <span class="topbar-user-name">@userName</span>
+                    </div>
+                    <button class="topbar-logout-btn" @onclick="Logout" title="Sign out">
+                        <i class="bi bi-box-arrow-right"></i>
+                        <span>Sign out</span>
+                    </button>
+                </div>
+            </div>
+
+            <!-- Content -->
+            <div class="content">
+                @Body
+            </div>
+        </div>
+    </div>
+}
+else
+{
+    @Body
+}
+
+@code {
+    private bool isAuthenticated = false;
+    private bool _sidebarCollapsed = false;
+    private string userName = "";
+    private string userEmail = "";
+    private char userInitial => string.IsNullOrEmpty(userName) ? '?' : char.ToUpper(userName[0]);
+
+    [CascadingParameter]
+    private Task<AuthenticationState>? authenticationStateTask { get; set; }
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (authenticationStateTask != null)
+        {
+            var authState = await authenticationStateTask;
+            isAuthenticated = authState.User.Identity?.IsAuthenticated ?? false;
+
+            if (isAuthenticated)
+            {
+                userName = authState.User.FindFirst(System.Security.Claims.ClaimTypes.Name)?.Value ?? "User";
+                userEmail = authState.User.FindFirst(System.Security.Claims.ClaimTypes.Email)?.Value ?? "";
+            }
+        }
+    }
+
+    private void ToggleSidebar()
+    {
+        _sidebarCollapsed = !_sidebarCollapsed;
+    }
+
+    private async Task Logout()
+    {
+        await AuthService.LogoutAsync();
+        NavigationManager.NavigateTo("/login", true);
+    }
+
+    private string GetPageTitle()
+    {
+        var uri = NavigationManager.Uri;
+        if (uri.Contains("/groups/")) return "Group Detail";
+        if (uri.EndsWith("/groups")) return "Study Groups";
+        if (uri.EndsWith("/sessions")) return "Sessions";
+        if (uri.EndsWith("/tasks")) return "My Tasks";
+        return "Dashboard";
+    }
+}

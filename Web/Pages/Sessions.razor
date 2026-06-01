@@ -1,0 +1,238 @@
+@page "/sessions"
+@attribute [Authorize]
+@inject IGroupService GroupService
+@inject ISessionService SessionService
+@inject NavigationManager NavigationManager
+@inject IJSRuntime JSRuntime
+
+<PageTitle>Sessions — StudyConnect</PageTitle>
+
+<div class="page-header">
+    <div class="page-header-left">
+        <h1 class="page-title">Study Sessions</h1>
+        <p class="page-subtitle">View and manage your scheduled study sessions</p>
+    </div>
+</div>
+
+@if (isLoading)
+{
+    <div class="loading-overlay">
+        <div class="spinner"></div>
+        <span>Loading sessions...</span>
+    </div>
+}
+else if (groups.Count == 0)
+{
+    <div class="empty-state">
+        <div class="empty-state-icon"><i class="bi bi-calendar-event"></i></div>
+        <h4>No Groups Yet</h4>
+        <p>Join or create a study group to view and schedule sessions.</p>
+        <div class="empty-state-actions">
+            <a href="/groups" class="btn btn-primary">
+                <i class="bi bi-people-fill"></i> Go to Groups
+            </a>
+        </div>
+    </div>
+}
+else
+{
+    <!-- Stats -->
+    <div style="display:flex; gap:12px; margin-bottom:24px; flex-wrap:wrap;">
+        <div style="background:var(--surface); border:1px solid var(--border); border-radius:var(--radius-sm); padding:12px 18px; display:flex; align-items:center; gap:10px;">
+            <div class="stat-icon blue" style="width:36px;height:36px;font-size:1rem;margin:0;">
+                <i class="bi bi-calendar-check"></i>
+            </div>
+            <div>
+                <div style="font-size:1.1rem;font-weight:700;color:var(--text-primary);">@upcomingCount</div>
+                <div class="fs-xs text-muted">Upcoming</div>
+            </div>
+        </div>
+        <div style="background:var(--surface); border:1px solid var(--border); border-radius:var(--radius-sm); padding:12px 18px; display:flex; align-items:center; gap:10px;">
+            <div class="stat-icon" style="width:36px;height:36px;font-size:1rem;margin:0;background:var(--surface-2);color:var(--text-secondary);">
+                <i class="bi bi-calendar-x"></i>
+            </div>
+            <div>
+                <div style="font-size:1.1rem;font-weight:700;color:var(--text-primary);">@pastCount</div>
+                <div class="fs-xs text-muted">Past</div>
+            </div>
+        </div>
+        <div style="background:var(--surface); border:1px solid var(--border); border-radius:var(--radius-sm); padding:12px 18px; display:flex; align-items:center; gap:10px;">
+            <div class="stat-icon teal" style="width:36px;height:36px;font-size:1rem;margin:0;">
+                <i class="bi bi-collection"></i>
+            </div>
+            <div>
+                <div style="font-size:1.1rem;font-weight:700;color:var(--text-primary);">@sessions.Count</div>
+                <div class="fs-xs text-muted">Total</div>
+            </div>
+        </div>
+    </div>
+
+    @if (!sessions.Any())
+    {
+        <div class="empty-state">
+            <div class="empty-state-icon"><i class="bi bi-calendar-event"></i></div>
+            <h4>No Sessions Scheduled</h4>
+            <p>Open a study group to schedule new sessions for your members.</p>
+            <div class="empty-state-actions">
+                <a href="/groups" class="btn btn-primary">
+                    <i class="bi bi-people-fill"></i> View Groups
+                </a>
+            </div>
+        </div>
+    }
+    else
+    {
+        <!-- Upcoming -->
+        var upcoming = sessions.Where(s => s.IsUpcoming).OrderBy(s => s.ScheduledAt).ToList();
+        {
+            <div class="section-title mb-3">
+                <i class="bi bi-clock-fill me-1" style="color:var(--primary);"></i>
+                Upcoming Sessions
+            </div>
+            @foreach (var session in upcoming)
+            {
+                var groupName = groups.FirstOrDefault(g => g.Id == session.GroupId)?.Name ?? "Unknown Group";
+                <div class="session-card upcoming mb-2">
+                    <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:12px;">
+                        <div style="flex:1; min-width:0;">
+                            <div style="display:flex; align-items:center; gap:8px; margin-bottom:4px; flex-wrap:wrap;">
+                                <h6 style="margin:0; font-size:0.9rem; font-weight:600; color:var(--text-primary);">
+                                    @session.Title
+                                </h6>
+                                <span class="badge badge-primary">Upcoming</span>
+                            </div>
+                            @if (!string.IsNullOrEmpty(session.Description))
+                            {
+                                <p style="margin:0 0 8px; font-size:0.825rem; color:var(--text-secondary);">@session.Description</p>
+                            }
+                            <div style="display:flex; flex-wrap:wrap; gap:14px; font-size:0.775rem; color:var(--text-secondary);">
+                                <span><i class="bi bi-calendar me-1"></i>@session.ScheduledAt.ToString("MMM dd, yyyy • HH:mm")</span>
+                                <span><i class="bi bi-clock me-1"></i>@session.DurationMinutes min</span>
+                                <span><i class="bi bi-people me-1"></i>@groupName</span>
+                                <span><i class="bi bi-person me-1"></i>@session.CreatedBy.Name</span>
+                            </div>
+                        </div>
+                        <div style="display:flex; gap:8px; flex-wrap:wrap; justify-content:flex-end;">
+                            @if (session.IsActive && session.UseBuiltInVideoCall)
+                            {
+                                <button class="btn btn-primary btn-sm" @onclick="() => JoinVideoCall(session.Id)">
+                                    <i class="bi bi-camera-video-fill"></i>
+                                    Join Video
+                                </button>
+                            }
+                            else if (!session.IsActive && session.UseBuiltInVideoCall)
+                            {
+                                <div style="font-size:0.75rem; color:var(--text-secondary); display:flex; align-items:center; gap:6px; padding:6px 10px; background:rgba(37, 99, 235, 0.1); border-radius:6px;">
+                                    <i class="bi bi-clock-fill"></i>
+                                    Starts in @GetTimeUntil(session.ScheduledAt)
+                                </div>
+                            }
+                            @if (!string.IsNullOrEmpty(session.MeetingLink))
+                            {
+                                <button class="btn btn-outline-secondary btn-sm" @onclick="() => OpenLink(session.MeetingLink!)">
+                                    <i class="bi bi-link-45deg"></i>
+                                    External Link
+                                </button>
+                            }
+                        </div>
+                    </div>
+                </div>
+            }
+        }
+
+        <!-- Past -->
+        var past = sessions.Where(s => !s.IsUpcoming).OrderByDescending(s => s.ScheduledAt).ToList();
+        {
+            <div class="section-title mb-3 mt-4">
+                <i class="bi bi-archive me-1" style="color:var(--text-tertiary);"></i>
+                Past Sessions
+            </div>
+            @foreach (var session in past)
+            {
+                var groupName = groups.FirstOrDefault(g => g.Id == session.GroupId)?.Name ?? "Unknown Group";
+                <div class="session-card past mb-2">
+                    <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:12px;">
+                        <div style="flex:1; min-width:0;">
+                            <div style="display:flex; align-items:center; gap:8px; margin-bottom:4px; flex-wrap:wrap;">
+                                <h6 style="margin:0; font-size:0.875rem; font-weight:600; color:var(--text-primary);">@session.Title</h6>
+                                <span class="badge badge-secondary">Past</span>
+                            </div>
+                            <div style="display:flex; flex-wrap:wrap; gap:14px; font-size:0.775rem; color:var(--text-secondary);">
+                                <span><i class="bi bi-calendar me-1"></i>@session.ScheduledAt.ToString("MMM dd, yyyy • HH:mm")</span>
+                                <span><i class="bi bi-clock me-1"></i>@session.DurationMinutes min</span>
+                                <span><i class="bi bi-people me-1"></i>@groupName</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            }
+        }
+    }
+}
+
+@code {
+    private List<StudyGroupDto> groups = new();
+    private List<SessionDtoExt> sessions = new();
+    private bool isLoading = true;
+    private int upcomingCount => sessions.Count(s => s.IsUpcoming);
+    private int pastCount => sessions.Count(s => !s.IsUpcoming);
+
+    protected override async Task OnInitializedAsync()
+    {
+        isLoading = true;
+        groups = await GroupService.GetMyGroupsAsync();
+
+        foreach (var group in groups)
+        {
+            var groupSessions = await SessionService.GetGroupSessionsAsync(group.Id);
+            sessions.AddRange(groupSessions.Select(s => new SessionDtoExt
+            {
+                Id = s.Id, 
+                Title = s.Title, 
+                Description = s.Description,
+                ScheduledAt = s.ScheduledAt, 
+                DurationMinutes = s.DurationMinutes,
+                MeetingLink = s.MeetingLink,
+                RoomName = s.RoomName,
+                VideoCallUrl = s.VideoCallUrl,
+                UseBuiltInVideoCall = s.UseBuiltInVideoCall,
+                IsActive = s.IsActive,
+                CreatedBy = s.CreatedBy,
+                CreatedAt = s.CreatedAt, 
+                IsUpcoming = s.IsUpcoming, 
+                GroupId = group.Id
+            }));
+        }
+
+        isLoading = false;
+    }
+
+    private void JoinVideoCall(Guid sessionId)
+    {
+        NavigationManager.NavigateTo($"/video-call/{sessionId}");
+    }
+
+    private async Task OpenLink(string url)
+    {
+        await JSRuntime.InvokeVoidAsync("open", url, "_blank");
+    }
+
+    private string GetTimeUntil(DateTime scheduledAt)
+    {
+        var timeUntil = scheduledAt - DateTime.Now;
+        if (timeUntil.TotalHours >= 1)
+            return $"{(int)timeUntil.TotalHours}h {timeUntil.Minutes}m";
+        else if (timeUntil.TotalMinutes >= 1)
+            return $"{(int)timeUntil.TotalMinutes}m";
+        else if (timeUntil.TotalSeconds >= 0)
+            return "Now!";
+        else
+            return "Started";
+    }
+
+    public class SessionDtoExt : SessionDto
+    {
+        public Guid GroupId { get; set; }
+    }
+}
+

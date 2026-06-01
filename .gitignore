@@ -1,0 +1,28 @@
+# Build output
+bin/
+obj/
+*/bin/
+*/obj/
+
+# Local runtime files
+*.log
+*.err.log
+*.db
+*.db-shm
+*.db-wal
+
+# Local secrets/config
+API/appsettings.json
+API/appsettings.Development.json
+API/appsettings.Production.json
+Web/wwwroot/appsettings.json
+
+# IDE/user files
+.vs/
+.vscode/
+*.user
+*.suo
+
+# OS files
+Thumbs.db
+.DS_Store
