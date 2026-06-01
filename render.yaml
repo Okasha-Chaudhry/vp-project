@@ -1,0 +1,24 @@
+services:
+  - type: web
+    name: studyconnect-api
+    runtime: docker
+    plan: free
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    autoDeploy: true
+    healthCheckPath: /health
+    envVars:
+      - key: ASPNETCORE_ENVIRONMENT
+        value: Production
+      - key: ConnectionStrings__DefaultConnection
+        sync: false
+      - key: Jwt__Key
+        sync: false
+      - key: Jwt__Issuer
+        value: StudyConnect
+      - key: Jwt__Audience
+        value: StudyConnectClient
+      - key: AllowedOrigins__0
+        sync: false
+      - key: Jitsi__ServerUrl
+        value: https://meet.jit.si

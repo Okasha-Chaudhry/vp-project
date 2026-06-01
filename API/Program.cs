@@ -111,6 +111,7 @@ if (app.Environment.IsDevelopment())
 app.UseCors("AllowBlazor");
 app.UseAuthentication();
 app.UseAuthorization();
+app.MapGet("/health", () => Results.Ok(new { status = "ok" })).AllowAnonymous();
 app.MapControllers();
 
 // Auto-migrate database on startup (both development and production)
