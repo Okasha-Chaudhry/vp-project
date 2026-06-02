@@ -72,7 +72,7 @@ builder.Services.AddAuthorization();
 
 // CORS Configuration - environment-aware
 var allowedOrigins = builder.Configuration.GetSection("AllowedOrigins").Get<string[]>()
-    ?? new[] { "http://localhost:5001", "http://localhost:3000" };
+    ?? new[] { "http://localhost:5001", "http://localhost:5002", "http://localhost:3000" };
 var allowedOriginSet = allowedOrigins
     .Select(origin => origin.TrimEnd('/'))
     .ToHashSet(StringComparer.OrdinalIgnoreCase);
@@ -97,7 +97,7 @@ builder.Services.AddCors(options =>
                   return Uri.TryCreate(origin, UriKind.Absolute, out var uri)
                       && (uri.Host.Equals("localhost", StringComparison.OrdinalIgnoreCase)
                           || uri.Host.Equals("127.0.0.1", StringComparison.OrdinalIgnoreCase))
-                      && (uri.Port == 5001 || uri.Port == 3000);
+                      && (uri.Port == 5001 || uri.Port == 5002 || uri.Port == 3000);
               })
               .AllowAnyMethod()
               .AllowAnyHeader()

@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>StudyConnect Admin</title>
+    <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+    <aside class="sidebar">
+        <div class="brand">
+            <div class="brand-mark">SC</div>
+            <div>
+                <strong>StudyConnect</strong>
+                <span>Admin Console</span>
+            </div>
+        </div>
+        <nav>
+            <a href="#overview" class="active">Overview</a>
+            <a href="#users">Users</a>
+            <a href="#groups">Groups</a>
+            <a href="#activity">Activity</a>
+        </nav>
+        <div class="api-box">
+            <span>API</span>
+            <strong id="apiBaseUrl">Loading...</strong>
+        </div>
+    </aside>
+
+    <main class="shell">
+        <header class="topbar">
+            <div>
+                <p class="eyebrow">Admin Dashboard</p>
+                <h1>Platform Control Center</h1>
+            </div>
+            <div class="actions">
+                <button id="refreshBtn" type="button">Refresh Data</button>
+            </div>
+        </header>
+
+        <section id="status" class="status-card">
+            <div>
+                <span class="status-dot"></span>
+                <strong id="statusText">Connecting to API...</strong>
+            </div>
+            <small id="lastUpdated">Not updated yet</small>
+        </section>
+
+        <section id="overview" class="stats-grid">
+            <article class="stat-card">
+                <span>Total Users</span>
+                <strong id="totalUsers">0</strong>
+            </article>
+            <article class="stat-card">
+                <span>Study Groups</span>
+                <strong id="totalGroups">0</strong>
+            </article>
+            <article class="stat-card">
+                <span>Resources</span>
+                <strong id="totalResources">0</strong>
+            </article>
+            <article class="stat-card">
+                <span>Sessions</span>
+                <strong id="totalSessions">0</strong>
+            </article>
+            <article class="stat-card">
+                <span>Tasks</span>
+                <strong id="totalTasks">0</strong>
+            </article>
+        </section>
+
+        <section class="panel-grid">
+            <article id="users" class="panel">
+                <div class="panel-header">
+                    <div>
+                        <p class="eyebrow">Directory</p>
+                        <h2>Users</h2>
+                    </div>
+                    <input id="userSearch" type="search" placeholder="Search users..." />
+                </div>
+                <div class="table-wrap">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Name</th>
+                                <th>Email</th>
+                                <th>Groups</th>
+                                <th>Created</th>
+                            </tr>
+                        </thead>
+                        <tbody id="usersTable"></tbody>
+                    </table>
+                </div>
+            </article>
+
+            <article id="groups" class="panel">
+                <div class="panel-header">
+                    <div>
+                        <p class="eyebrow">Workspaces</p>
+                        <h2>Groups</h2>
+                    </div>
+                    <input id="groupSearch" type="search" placeholder="Search groups..." />
+                </div>
+                <div class="table-wrap">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Group</th>
+                                <th>Invite</th>
+                                <th>Owner</th>
+                                <th>Members</th>
+                                <th>Items</th>
+                            </tr>
+                        </thead>
+                        <tbody id="groupsTable"></tbody>
+                    </table>
+                </div>
+            </article>
+        </section>
+
+        <section id="activity" class="panel">
+            <div class="panel-header">
+                <div>
+                    <p class="eyebrow">Latest</p>
+                    <h2>Recent Activity</h2>
+                </div>
+            </div>
+            <div id="activityList" class="activity-list"></div>
+        </section>
+    </main>
+
+    <script src="app.js"></script>
+</body>
+</html>
