@@ -10,10 +10,12 @@ namespace StudyConnect.API.Controllers;
 public class AuthController : ControllerBase
 {
     private readonly IAuthService _authService;
+    private readonly ILogger<AuthController> _logger;
 
-    public AuthController(IAuthService authService)
+    public AuthController(IAuthService authService, ILogger<AuthController> logger)
     {
         _authService = authService;
+        _logger = logger;
     }
 
     [HttpPost("register")]
@@ -29,7 +31,18 @@ public class AuthController : ControllerBase
         }
         catch (InvalidOperationException ex)
         {
-            return Conflict(new { message = ex.Message });
+            if (ex.Message.Contains("already exists", StringComparison.OrdinalIgnoreCase))
+            {
+                return Conflict(new { message = ex.Message });
+            }
+
+            _logger.LogError(ex, "Registration failed because the database operation failed.");
+            return StatusCode(StatusCodes.Status500InternalServerError, new { message = "Could not reach the database. Please try again." });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Registration failed unexpectedly.");
+            return StatusCode(StatusCodes.Status500InternalServerError, new { message = "Could not create account right now. Please try again." });
         }
     }
 
@@ -47,6 +60,11 @@ public class AuthController : ControllerBase
         catch (UnauthorizedAccessException ex)
         {
             return Unauthorized(new { message = ex.Message });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Login failed because the database operation failed.");
+            return StatusCode(StatusCodes.Status500InternalServerError, new { message = "Could not reach the database. Please try again." });
         }
     }
 

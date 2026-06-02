@@ -39,10 +39,20 @@ builder.Services.AddSwaggerGen(c =>
 // PostgreSQL Database Configuration
 var connectionString = builder.Configuration.GetConnectionString("DefaultConnection")
     ?? throw new InvalidOperationException("Connection string 'DefaultConnection' not found.");
+var databaseProvider = builder.Configuration["Database:Provider"] ?? "Postgres";
 
 builder.Services.AddDbContext<StudyConnectDbContext>(options =>
-    options.UseNpgsql(connectionString,
-        npgsqlOptions => npgsqlOptions.CommandTimeout(60)));
+{
+    if (databaseProvider.Equals("Sqlite", StringComparison.OrdinalIgnoreCase))
+    {
+        options.UseSqlite(connectionString);
+    }
+    else
+    {
+        options.UseNpgsql(connectionString,
+            npgsqlOptions => npgsqlOptions.CommandTimeout(60));
+    }
+});
 
 // JWT Authentication
 var jwtKey = builder.Configuration["Jwt:Key"]
@@ -140,7 +150,14 @@ try
     using (var scope = app.Services.CreateScope())
     {
         var context = scope.ServiceProvider.GetRequiredService<StudyConnectDbContext>();
-        context.Database.Migrate();
+        if (databaseProvider.Equals("Sqlite", StringComparison.OrdinalIgnoreCase))
+        {
+            context.Database.EnsureCreated();
+        }
+        else
+        {
+            context.Database.Migrate();
+        }
     }
 }
 catch (Exception ex)
